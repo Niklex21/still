@@ -13,7 +13,7 @@
     { "name": "scrolling", "title": "Capture Scrolling Screenshot", "subtitle": "Still", "description": "Select a region and scroll to stitch a tall screenshot.", "mode": "no-view" },
     { "name": "shelf", "title": "Show Screenshot Shelf", "subtitle": "Still", "description": "Show all screenshots waiting on your shelf.", "mode": "no-view" }
   ],
-  "dependencies": { "@raycast/api": "^1.104.0", "react": "^19.0.0" },
+  "dependencies": { "@raycast/api": "^2.11.1", "react": "^19.0.0" },
   "devDependencies": { "@types/node": "^22.0.0", "@types/react": "^19.0.0", "typescript": "^5.8.0" },
   "scripts": { "build": "ray build", "dev": "ray develop", "typecheck": "tsc --noEmit", "test": "node --experimental-strip-types --test tests/*.test.mts" }
 }
