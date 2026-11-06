@@ -7,7 +7,13 @@
 
 Still is a native menu-bar app built with Swift, AppKit, and SwiftUI. It keeps a small queue of screenshots ready for drag and drop, an editable annotation canvas, and a searchable local history. No account, subscription, API key, or cloud service is required. An optional Raycast extension brings the same library to your launcher.
 
-**Source-first release:** build the app with the instructions below. This repository does not include a notarized app download.
+## Download
+
+**[Download Still for Mac (.dmg)](https://github.com/Niklex21/still/releases/download/v1.0.0-preview.1/Still-1.0.0-preview.1-universal.dmg)** · [Release notes](https://github.com/Niklex21/still/releases/tag/v1.0.0-preview.1)
+
+Open the DMG, drag **Still** into **Applications**, then launch it. The app is self-contained; no developer tools or Node.js are needed. The universal download includes Apple Silicon and Intel code.
+
+**Preview:** the download is ad-hoc signed and **not notarized**. macOS may block opening it because the developer cannot be verified; [Apple explains the available security controls](https://support.apple.com/en-us/102445). A Developer ID-signed, notarized release is the next distribution step. Source builds remain available below.
 
 ## What it does
 
@@ -227,11 +233,13 @@ npm test
 npm run build
 ```
 
+To create a downloadable app or perform Developer ID signing and notarization, see [Release packaging](docs/releases.md).
+
 See [Architecture](docs/architecture.md) for the source map, data model, and integration boundaries, and [Contributing](CONTRIBUTING.md) for change and validation guidance.
 
 ## Status and limitations
 
-Still is an early, source-built macOS app. It is not notarized for distribution, and this repository does not provide an automatic updater. Scrolling stitching depends on visual overlap. AI descriptions and redaction suggestions need review. English semantic ranking and optional macOS 27 image understanding have the model requirements described above. There is no video/GIF recorder or cloud sharing backend.
+Still is an early macOS app with a downloadable universal preview and source builds. The preview is not notarized, and this repository does not provide an automatic updater. Scrolling stitching depends on visual overlap. AI descriptions and redaction suggestions need review. English semantic ranking and optional macOS 27 image understanding have the model requirements described above. There is no video/GIF recorder or cloud sharing backend.
 
 ## License
 
