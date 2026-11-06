@@ -1,0 +1,152 @@
+import AppKit
+import Vision
+
+public enum Imaging {
+    /// Frames a window capture on a subtle backdrop, without scaling its pixels.
+    public static func frameWindow(_ image: CGImage, background: CGImage? = nil, style: FrameBackground = .gradient,
+                                   color: CGColor = CGColor(red: 0.6, green: 0.7, blue: 0.85, alpha: 1),
+                                   padding: Double = 0.08, shadow: Bool = true, dimming: Double = 0) throws -> CGImage {
+        let margin = max(48, Int(Double(max(image.width, image.height)) * min(0.20, max(0.03, padding))))
+        let width = image.width + margin * 2, height = image.height + margin * 2
+        guard width <= 30_000, height <= 30_000, width * height <= 150_000_000,
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw ImageError.tooLarge }
+        if style == .solid {
+            context.setFillColor(color); context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        } else if style != .transparent {
+            if let background, style == .wallpaper || style == .image {
+                let scale = max(CGFloat(width) / CGFloat(background.width), CGFloat(height) / CGFloat(background.height))
+                let size = CGSize(width: CGFloat(background.width) * scale, height: CGFloat(background.height) * scale)
+                context.draw(background, in: CGRect(x: (CGFloat(width) - size.width) / 2, y: (CGFloat(height) - size.height) / 2, width: size.width, height: size.height))
+            } else {
+                let colors = [CGColor(red: 0.72, green: 0.76, blue: 0.88, alpha: 1), CGColor(red: 0.40, green: 0.49, blue: 0.65, alpha: 1)] as CFArray
+                guard let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors, locations: [0, 1]) else { throw ImageError.invalid }
+                context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: height), end: CGPoint(x: width, y: 0), options: [])
+            }
+            context.setFillColor(CGColor(gray: 0, alpha: min(0.5, max(0, dimming))))
+            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        if shadow { context.setShadow(offset: CGSize(width: 0, height: -CGFloat(margin) * 0.13), blur: CGFloat(margin) * 0.38, color: CGColor(gray: 0, alpha: 0.30)) }
+        context.draw(image, in: CGRect(x: margin, y: margin, width: image.width, height: image.height))
+        guard let result = context.makeImage() else { throw ImageError.invalid }
+        return result
+    }
+    public static func dragProvider(for url: URL) -> NSItemProvider {
+        let provider = NSItemProvider(contentsOf: url) ?? NSItemProvider()
+        // Some destinations accept file URLs, while others request PNG content.
+        provider.registerFileRepresentation(forTypeIdentifier: "public.png", fileOptions: [], visibility: .all) { completion in
+            if FileManager.default.fileExists(atPath: url.path) {
+                completion(url, false, nil)
+            } else {
+                completion(nil, false, CocoaError(.fileNoSuchFile))
+            }
+            return nil
+        }
+        return provider
+    }
+    public static func load(_ url: URL) throws -> CGImage {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { throw ImageError.invalid }
+        return image
+    }
+
+    public static func png(_ image: CGImage) throws -> Data {
+        let data = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) else { throw ImageError.invalid }
+        CGImageDestinationAddImage(dest, image, nil)
+        guard CGImageDestinationFinalize(dest) else { throw ImageError.invalid }
+        return data as Data
+    }
+
+    public static func recognize(_ image: CGImage) throws -> String {
+        try recognizeRegions(image, words: false).map(\.text).joined(separator: "\n")
+    }
+    public static func recognizeRegions(_ image: CGImage, words: Bool = true) throws -> [TextRegion] {
+        let request = VNRecognizeTextRequest(); request.recognitionLevel = .accurate; request.usesLanguageCorrection = true
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        func pixels(_ r: CGRect) -> CGRect { CGRect(x: r.minX * CGFloat(image.width), y: (1 - r.maxY) * CGFloat(image.height), width: r.width * CGFloat(image.width), height: r.height * CGFloat(image.height)) }
+        var regions: [TextRegion] = []
+        let regex = try NSRegularExpression(pattern: #"\S+"#)
+        for observation in request.results ?? [] {
+            guard let candidate = observation.topCandidates(1).first else { continue }
+            if !words { regions.append(TextRegion(text: candidate.string, rect: pixels(observation.boundingBox))); continue }
+            let text = candidate.string
+            for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+                guard let range = Range(match.range, in: text) else { continue }
+                let rect = (try? candidate.boundingBox(for: range))?.boundingBox ?? observation.boundingBox
+                regions.append(TextRegion(text: String(text[range]), rect: pixels(rect)))
+            }
+        }
+        return regions
+    }
+
+    public enum ImageError: LocalizedError {
+        case invalid, tooLarge, noOverlap
+        public var errorDescription: String? {
+            switch self {
+            case .invalid: return "This image could not be read. Try a PNG, JPEG, TIFF, or HEIC image."
+            case .tooLarge: return "The scrolling image reached the 30,000-pixel safety limit. Finish this capture and start another."
+            case .noOverlap: return "No matching overlap. Scroll back a little, then continue more slowly."
+            }
+        }
+    }
+}
+
+/// Detects vertical translation using sampled luminance, then appends only new pixels.
+/// Input and output use image coordinates (origin at top left).
+public final class ScrollStitcher {
+    public private(set) var result: CGImage
+    private var previous: CGImage
+    public private(set) var frameCount = 1
+    public private(set) var lastShift = 0
+    public init(first: CGImage) { result = first; previous = first }
+
+    private func gray(_ image: CGImage) -> [UInt8] {
+        // Exclude sidebars, scrollbar, and edges from overlap matching.
+        let sampleWidth = 64
+        var data = [UInt8](repeating: 0, count: sampleWidth * image.height)
+        data.withUnsafeMutableBytes { bytes in
+            let c = CGContext(data: bytes.baseAddress, width: sampleWidth, height: image.height, bitsPerComponent: 8, bytesPerRow: sampleWidth, space: CGColorSpaceCreateDeviceGray(), bitmapInfo: 0)!
+            c.interpolationQuality = .low
+            c.draw(image, in: CGRect(x: 0, y: 0, width: sampleWidth, height: image.height))
+        }
+        return data
+    }
+
+    @discardableResult public func append(_ image: CGImage) throws -> Bool {
+        guard image.width == previous.width, image.height == previous.height else { throw Imaging.ImageError.noOverlap }
+        let a = gray(previous), b = gray(image), h = image.height, w = 64
+        let margin = max(8, h / 12) // tolerate a small sticky header/footer
+        func score(_ shift: Int) -> Double {
+            var error = 0.0, count = 0
+            let end = h - shift - margin
+            guard end > margin + 30 else { return .infinity }
+            for y in stride(from: margin, to: end, by: max(2, h / 100)) {
+                for x in stride(from: 10, to: 54, by: 2) {
+                    error += abs(Double(a[(y + shift) * w + x]) - Double(b[y * w + x])); count += 1
+                }
+            }
+            return error / Double(max(1, count))
+        }
+        if score(0) < 0.8 { lastShift = 0; return false }
+        var best = (shift: 0, error: Double.infinity)
+        // Evaluate every pixel offset: a coarse offset stride can skip the only
+        // correct alignment on text or other high-frequency content.
+        for shift in 1...max(1, h * 3 / 4) {
+            let s = score(shift); if s < best.error { best = (shift, s) }
+        }
+        guard best.error < 9.0 else { throw Imaging.ImageError.noOverlap }
+        let shift = best.shift
+        guard result.height + shift <= 30_000 else { throw Imaging.ImageError.tooLarge }
+        // Replace the previous frame's bottom margin so fixed footers don't repeat.
+        let seam = result.height - margin
+        let newHeight = result.height + shift
+        guard let c = CGContext(data: nil, width: result.width, height: newHeight, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let old = result.cropping(to: CGRect(x: 0, y: 0, width: result.width, height: seam)),
+              let addition = image.cropping(to: CGRect(x: 0, y: h - shift - margin, width: image.width, height: shift + margin)) else { throw Imaging.ImageError.invalid }
+        c.draw(old, in: CGRect(x: 0, y: newHeight - seam, width: result.width, height: seam))
+        c.draw(addition, in: CGRect(x: 0, y: 0, width: image.width, height: shift + margin))
+        guard let merged = c.makeImage() else { throw Imaging.ImageError.invalid }
+        result = merged; previous = image; frameCount += 1; lastShift = shift
+        return true
+    }
+}

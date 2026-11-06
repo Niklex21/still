@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SnapShelf scrolling test</title>
+<style>
+body { margin:0; background:#f2f5f4; font:20px -apple-system, sans-serif; color:#142921 }
+main { width:760px; margin:50px auto }
+h1 { font-size:46px; letter-spacing:-1.5px; margin:0 0 12px }
+header { padding:24px 0 35px }
+article { margin:0 0 24px; padding:32px; border:1px solid #c5d7ce; border-radius:20px; min-height:200px; background:white }
+small { color:#258365; font-weight:700; letter-spacing:3px; font-size:14px }
+h2 { font-size:28px; letter-spacing:-.5px }
+p { line-height:1.6; color:#486255 }
+.bar { border-radius:8px; height:15px; background:#cfeade; margin-top:16px }
+</style>
+<main><header><small>SNAPSHELF · SCROLLING TEST</small><h1>A long page. One image.</h1><p>Scroll slowly to capture all twelve numbered sections.</p></header><div id="rows"></div><footer>END OF CAPTURE · SECTION 12 COMPLETE</footer></main>
+<script>
+const titles=['A place to begin','Keep a little context','Make your point','Capture the details','Room for another idea','A useful reference','Find it again','The whole picture','Keep moving forward','Almost at the end','One last detail','Everything together'];
+document.querySelector('#rows').innerHTML=titles.map((t,i)=>`<article><small>SECTION ${String(i+1).padStart(2,'0')}</small><h2>${t}</h2><p>This is unique content for capture frame ${i+1}. The overlap matcher should preserve this section exactly once, with no missing lines.</p><div class="bar" style="width:${40+i*4}%"></div></article>`).join('');
+</script>

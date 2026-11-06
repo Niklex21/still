@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>local.alex.Still</string>
+<key>CFBundleExecutable</key><string>Still</string>
+<key>CFBundleName</key><string>Still</string>
+<key>CFBundleDisplayName</key><string>Still</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>1.0.0</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>CFBundleIconFile</key><string>AppIcon.icns</string>
+<key>LSMinimumSystemVersion</key><string>14.0</string>
+<key>LSUIElement</key><true/>
+<key>NSHighResolutionCapable</key><true/>
+<key>NSScreenCaptureUsageDescription</key><string>Still captures screenshots and scrolling regions that you select.</string>
+<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>Still Commands</string><key>CFBundleURLSchemes</key><array><string>still</string></array></dict></array>
+<key>CFBundleDocumentTypes</key><array><dict><key>CFBundleTypeName</key><string>Images</string><key>CFBundleTypeRole</key><string>Viewer</string><key>LSItemContentTypes</key><array><string>public.image</string></array></dict></array>
+</dict></plist>

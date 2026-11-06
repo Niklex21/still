@@ -1,0 +1,19 @@
+{
+  "name": "still-screenshots",
+  "title": "Still",
+  "description": "Find your local screenshots by visual content, name, and text, preview, copy, annotate, and capture.",
+  "icon": "icon.png",
+  "author": "alex",
+  "license": "MIT",
+  "platforms": ["macOS"],
+  "categories": ["Productivity", "Design Tools"],
+  "commands": [
+    { "name": "search", "title": "Search Screenshots", "subtitle": "Still", "description": "Search screenshot visual descriptions, titles, and recognized text, preview images, and copy or annotate them.", "mode": "view" },
+    { "name": "capture", "title": "Capture Screenshot", "subtitle": "Still", "description": "Capture a region with Still.", "mode": "no-view" },
+    { "name": "scrolling", "title": "Capture Scrolling Screenshot", "subtitle": "Still", "description": "Select a region and scroll to stitch a tall screenshot.", "mode": "no-view" },
+    { "name": "shelf", "title": "Show Screenshot Shelf", "subtitle": "Still", "description": "Show all screenshots waiting on your shelf.", "mode": "no-view" }
+  ],
+  "dependencies": { "@raycast/api": "^1.104.0", "react": "^19.0.0" },
+  "devDependencies": { "@types/node": "^22.0.0", "@types/react": "^19.0.0", "typescript": "^5.8.0" },
+  "scripts": { "build": "ray build", "dev": "ray develop", "typecheck": "tsc --noEmit", "test": "node --experimental-strip-types --test tests/*.test.mts" }
+}

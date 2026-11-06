@@ -1,0 +1,29 @@
+# Build output and dependencies
+.build/
+.swiftpm/
+dist/
+Raycast/node_modules/
+Raycast/.raycast/
+
+# Local tooling and macOS metadata
+.DS_Store
+*.xcuserstate
+xcuserdata/
+*.log
+
+# Local capture libraries and generated exports
+library.json
+Images/
+Exports/
+Walkthroughs/
+
+# Local configuration, credentials, and signing material
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.mobileprovision
+*.provisionprofile
+*.key
+*.pem
