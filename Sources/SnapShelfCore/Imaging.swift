@@ -167,14 +167,20 @@ public final class ScrollStitcher {
         guard best.error < 9.0 else { throw Imaging.ImageError.noOverlap }
         let shift = best.shift
         guard result.height + shift <= 30_000, Int64(result.width) * Int64(result.height + shift) <= 150_000_000 else { throw Imaging.ImageError.tooLarge }
-        // Replace the previous frame's bottom margin so fixed footers don't repeat.
-        let seam = result.height - margin
+        // Join near the beginning of the overlap, below the sticky-header band.
+        // Keeping almost the entire old viewport sliced floating footer buttons
+        // into a trail: they often sit above the narrow bottom margin. Replace
+        // the rest of that viewport with fresh pixels instead. A fixed footer
+        // remains only in the newest viewport, where it can be replaced again.
+        let incomingStart = margin
+        let additionHeight = h - incomingStart
+        let seam = result.height - h + shift + incomingStart
         let newHeight = result.height + shift
         guard let c = CGContext(data: nil, width: result.width, height: newHeight, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
               let old = result.cropping(to: CGRect(x: 0, y: 0, width: result.width, height: seam)),
-              let addition = image.cropping(to: CGRect(x: 0, y: h - shift - margin, width: image.width, height: shift + margin)) else { throw Imaging.ImageError.invalid }
+              let addition = image.cropping(to: CGRect(x: 0, y: incomingStart, width: image.width, height: additionHeight)) else { throw Imaging.ImageError.invalid }
         c.draw(old, in: CGRect(x: 0, y: newHeight - seam, width: result.width, height: seam))
-        c.draw(addition, in: CGRect(x: 0, y: 0, width: image.width, height: shift + margin))
+        c.draw(addition, in: CGRect(x: 0, y: 0, width: image.width, height: additionHeight))
         guard let merged = c.makeImage() else { throw Imaging.ImageError.invalid }
         result = merged; previous = image; frameCount += 1; lastShift = shift
         return true
