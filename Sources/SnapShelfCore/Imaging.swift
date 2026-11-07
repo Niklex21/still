@@ -45,7 +45,11 @@ public enum Imaging {
     }
     public static func load(_ url: URL) throws -> CGImage {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { throw ImageError.invalid }
+              let properties = CGImageSourceCopyPropertiesAtIndex(source,0,nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0 else { throw ImageError.invalid }
+        guard width <= 30_000, height <= 30_000, Int64(width)*Int64(height) <= 150_000_000 else { throw ImageError.tooLarge }
+        guard let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { throw ImageError.invalid }
         return image
     }
 

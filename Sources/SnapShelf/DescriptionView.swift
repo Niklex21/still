@@ -93,8 +93,8 @@ struct DescriptionView: View {
                     if let description {
                         Button {
                             let text = description.summary + (description.keywords.isEmpty ? "" : "\n\n" + description.keywords.joined(separator: ", "))
-                            NSPasteboard.general.clearContents()
-                            copied = NSPasteboard.general.setString(text, forType: .string)
+                            store.pasteboard.clearContents()
+                            copied = store.pasteboard.setString(text, forType: .string)
                         } label: {
                             Label(copied ? "Copied" : "Copy Description", systemImage: copied ? "checkmark" : "doc.on.doc")
                         }
@@ -110,7 +110,9 @@ struct DescriptionView: View {
             .onChange(of: description) { _, _ in copied = false }
     }
     @ViewBuilder private var pendingDescription: some View {
-        if !preferences.visualSearchEnabled {
+        if item?.isPrivate == true {
+            Text("Private capture · image analysis is off").foregroundStyle(.secondary)
+        } else if !preferences.visualSearchEnabled {
             Text("Image analysis is paused.").foregroundStyle(.secondary)
             Button("Resume Analysis") { preferences.visualSearchEnabled = true }
         } else if store.visualFailures[id] != nil {

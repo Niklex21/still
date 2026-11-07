@@ -116,20 +116,30 @@ final class WalkthroughModel: ObservableObject {
             status = "Exported"
         } catch { status = error.localizedDescription }
     }
+    enum PDFError: LocalizedError {
+        case captionTooLong
+        var errorDescription: String? { "This caption is too long for a PDF page. Shorten it or export Markdown instead." }
+    }
     func pdf() throws -> Data {
         let data = NSMutableData()
         guard let consumer = CGDataConsumer(data: data), let ctx = CGContext(consumer: consumer, mediaBox: nil, nil) else { throw Imaging.ImageError.invalid }
-        let page = CGRect(x: 0, y: 0, width: 842, height: 595)
+        let titleFont = NSFont.systemFont(ofSize: 20, weight: .semibold), captionFont = NSFont.systemFont(ofSize: 13)
         for (i, step) in project.steps.enumerated() {
             try autoreleasepool {
-            let image = try input(step)
+            let image = try input(step), title = "\(i + 1). \(step.title)" as NSString
+            let titleHeight = ceil(title.boundingRect(with: CGSize(width: 778,height: 20000),options: [.usesLineFragmentOrigin,.usesFontLeading],attributes: [.font: titleFont]).height)
+            let captionHeight = ceil((step.caption as NSString).boundingRect(with: CGSize(width: 778,height: 20000),options: [.usesLineFragmentOrigin,.usesFontLeading],attributes: [.font: captionFont]).height)
+            let imageTop = 24 + titleHeight + 12 + captionHeight + 18
+            let desiredImageHeight = min(453,CGFloat(image.height) * min(1,778 / CGFloat(image.width)))
+            let page = CGRect(x: 0,y: 0,width: 842,height: max(595,imageTop + desiredImageHeight + 32))
+            guard page.height <= 14000 else { throw PDFError.captionTooLong }
             ctx.beginPDFPage([kCGPDFContextMediaBox as String: NSData(bytes: [page], length: MemoryLayout<CGRect>.size)] as CFDictionary)
             ctx.saveGState(); ctx.setFillColor(CGColor(gray: 1, alpha: 1)); ctx.fill(page); ctx.translateBy(x: 0, y: page.height); ctx.scaleBy(x: 1, y: -1)
             NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: true)
-            ("\(i + 1). \(step.title)" as NSString).draw(in: CGRect(x: 32, y: 24, width: 778, height: 32), withAttributes: [.font: NSFont.systemFont(ofSize: 20, weight: .semibold), .foregroundColor: NSColor.black])
-            (step.caption as NSString).draw(in: CGRect(x: 32, y: 60, width: 778, height: 44), withAttributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.darkGray])
-            let scale = min(778 / CGFloat(image.width), 453 / CGFloat(image.height)), size = CGSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
-            NSImage(cgImage: image, size: .zero).draw(in: CGRect(x: (842 - size.width) / 2, y: 110, width: size.width, height: size.height), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            title.draw(in: CGRect(x: 32,y: 24,width: 778,height: titleHeight+2),withAttributes: [.font: titleFont,.foregroundColor: NSColor.black])
+            (step.caption as NSString).draw(in: CGRect(x: 32,y: 24+titleHeight+12,width: 778,height: captionHeight+2),withAttributes: [.font: captionFont,.foregroundColor: NSColor.darkGray])
+            let scale = min(778 / CGFloat(image.width), (page.height-imageTop-32) / CGFloat(image.height)), size = CGSize(width: CGFloat(image.width)*scale,height: CGFloat(image.height)*scale)
+            NSImage(cgImage: image, size: .zero).draw(in: CGRect(x: (842-size.width)/2,y: imageTop,width: size.width,height: size.height),from: .zero,operation: .sourceOver,fraction: 1,respectFlipped: true,hints: nil)
             NSGraphicsContext.restoreGraphicsState(); ctx.restoreGState(); ctx.endPDFPage()
             }
         }

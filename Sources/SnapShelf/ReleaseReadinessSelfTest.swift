@@ -45,10 +45,15 @@ enum ReleaseReadinessSelfTest {
         let secret = try store.add(image,title: "Secret",privateCapture: true)
         try expect(!store.history.contains { $0.id == secret.id } && !store.indexing.contains(secret.id), "Private captures stay outside History and background OCR")
         try expect(!(try String(contentsOf: store.disk.indexURL)).contains(secret.id.uuidString), "Private metadata is absent from the persisted index")
+        let privateProject = WalkthroughModel(items: [secret],store: store)
+        try expect(!privateProject.saveProject(), "A private capture cannot be persisted through a walkthrough")
+        try expect(store.disk.url(secret).deletingLastPathComponent() == store.disk.privateImages, "Private image files are isolated from the searchable Images folder")
         store.retainPrivate(secret.id); store.consume(secret.id)
         try expect(store.captures.contains { $0.id == secret.id }, "An open private editor or export retains its source")
         store.releasePrivate(secret.id)
         try expect(!store.captures.contains { $0.id == secret.id }, "Handled private captures leave memory after their final user closes")
+        store.clearPrivateCaptures()
+        try expect(!FileManager.default.fileExists(atPath: store.disk.privateImages.path), "Quitting clears leased private files as well as private memory")
         let oldDate = Date().addingTimeInterval(-50*86400)
         store.consume(newer.id)
         for i in store.captures.indices { store.captures[i].createdAt = oldDate; store.captures[i].onShelf = false }
@@ -60,6 +65,12 @@ enum ReleaseReadinessSelfTest {
         defaults.set(30,forKey: "retentionDays.v1")
         preferences.retentionDays = 30
         let retainedStore = store
+        let brokenProject = projects.appendingPathComponent("broken.json")
+        try Data("invalid project".utf8).write(to: brokenProject)
+        let beforeCleanup = store.captures
+        retainedStore.cleanupExpiredCaptures()
+        try expect(store.captures == beforeCleanup && store.cleanupStatus.hasPrefix("Cleanup paused"), "Unreadable walkthrough metadata pauses retention without deleting images")
+        try FileManager.default.removeItem(at: brokenProject)
         let candidates = try retainedStore.retentionCandidates()
         try expect(Set(candidates.map(\.id)) == [fresh.id,sharing.id,newer.id], "Retention protects favorites, pins, queued captures, and walkthrough sources")
         let trash = root.appendingPathComponent("TestTrash"); try FileManager.default.createDirectory(at: trash,withIntermediateDirectories: true)

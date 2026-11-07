@@ -74,6 +74,11 @@ enum WorkflowSelfTest {
         let document = PDFDocument(data: try batch.pdf())
         try expect(document?.pageCount == 2, "PDF exports one step per page")
         try expect(document?.string?.contains("First step") == true && document?.string?.contains("Then finish") == true, "PDF includes readable titles and captions")
+        let longCaption = String(repeating: "Detailed instructions remain readable. ", count: 180) + "FINAL-CAPTION-MARKER"
+        batch.project.steps[0].caption = longCaption
+        let longPDF = PDFDocument(data: try batch.pdf())
+        try expect(longPDF?.string?.contains("FINAL-CAPTION-MARKER") == true && (longPDF?.page(at: 0)?.bounds(for: .mediaBox).height ?? 0) > 595, "Long walkthrough captions export in full instead of being clipped")
+        batch.project = project
         batch.saveProject()
         let url = root.appendingPathComponent("Walkthroughs/\(project.id).json")
         try expect(try JSONDecoder().decode(Walkthrough.self, from: Data(contentsOf: url)) == project, "Walkthrough ordering and captions persist")

@@ -23,7 +23,7 @@ public struct ImageDifference {
         let width = max(1, Int(CGFloat(first.width) * factor)), height = max(1, Int(CGFloat(first.height) * factor))
         let a = try pixels(first, width: width, height: height)
         let b = try pixels(second, width: width, height: height)
-        let delta = options.align ? registration(a, b, width: width, height: height) : (0, 0)
+        let delta = options.align ? registration(a, b, width: width, height: height, ignored: options.ignored) : (0, 0)
         var aligned = [UInt8](repeating: 255, count: a.count), output = aligned
         var changed = 0, compared = 0
         for y in 0..<height { for x in 0..<width {
@@ -54,7 +54,7 @@ public struct ImageDifference {
     private static func image(_ data: [UInt8], width: Int, height: Int) throws -> CGImage {
         guard let provider = CGDataProvider(data: Data(data) as CFData), let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue), provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else { throw Imaging.ImageError.invalid }; return image
     }
-    private static func registration(_ a: [UInt8], _ b: [UInt8], width: Int, height: Int) -> (Int, Int) {
+    private static func registration(_ a: [UInt8], _ b: [UInt8], width: Int, height: Int, ignored: [CGRect]) -> (Int, Int) {
         guard width > 8, height > 8 else { return (0,0) }
         let limitX = min(100, width / 10), limitY = min(100, height / 10)
         let coarse = max(1, max(width,height) / 160), sample = max(1, max(width,height) / 80)
@@ -62,6 +62,7 @@ public struct ImageDifference {
             var error = 0.0, count = 0
             for y in stride(from: limitY, to: height-limitY, by: sample) {
                 for x in stride(from: limitX, to: width-limitX, by: sample) {
+                    if ignored.contains(where: { $0.contains(CGPoint(x: (Double(x)+0.5)/Double(width),y: (Double(y)+0.5)/Double(height))) }) { continue }
                     let bx = x-dx, by = y-dy
                     guard bx >= 0, bx < width, by >= 0, by < height else { continue }
                     let i = (y*width+x)*4, j = (by*width+bx)*4
