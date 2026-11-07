@@ -15,6 +15,8 @@ final class WalkthroughModel: ObservableObject {
     @Published var ignoringRegion = false
     @Published var comparing = false
     private var comparisonGeneration = 0
+    private let comparisonQueue = DispatchQueue(label: "Still.Comparison", qos: .userInitiated)
+    private var comparisonTask: DispatchWorkItem?
     @Published var status = ""
     @Published var preview: NSImage?
     @Published var dirty = false
@@ -60,15 +62,19 @@ final class WalkthroughModel: ObservableObject {
         guard let output = ctx.makeImage() else { throw Imaging.ImageError.invalid }; return output
     }
     func refreshDifference() {
-        comparisonGeneration += 1
+        comparisonGeneration += 1; comparisonTask?.cancel()
         let generation = comparisonGeneration
-        guard project.steps.count == 2 else { difference = nil; return }
+        guard project.steps.count == 2 else { difference = nil; comparing = false; return }
         let urls = project.steps.compactMap { step in store.captures.first { $0.id == step.id }.map { store.disk.url($0) } }
-        guard urls.count == 2 else { difference = nil; status = "A source screenshot is missing"; return }
+        guard urls.count == 2 else { difference = nil; comparing = false; status = "A source screenshot is missing"; return }
         var options = DifferenceOptions(); options.align = alignComparison; options.tolerance = UInt8(tolerance); options.ignored = ignoredRegions
         comparing = true
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let result = Result { try ImageDifference.compare(Imaging.load(urls[0]), Imaging.load(urls[1]), options: options) }
+        let task = DispatchWorkItem { [weak self] in
+            func source(_ url: URL) throws -> CGImage {
+                guard let file = CGImageSourceCreateWithURL(url as CFURL,nil), let image = CGImageSourceCreateThumbnailAtIndex(file,0,[kCGImageSourceCreateThumbnailFromImageAlways: true,kCGImageSourceThumbnailMaxPixelSize: 2000] as CFDictionary) else { throw Imaging.ImageError.invalid }
+                return image
+            }
+            let result = Result { try ImageDifference.compare(source(urls[0]),source(urls[1]),options: options) }
             DispatchQueue.main.async {
                 guard let self, self.comparisonGeneration == generation else { return }
                 self.comparing = false
@@ -78,9 +84,11 @@ final class WalkthroughModel: ObservableObject {
                 }
             }
         }
+        comparisonTask = task; comparisonQueue.asyncAfter(deadline: .now() + 0.1, execute: task)
     }
+    deinit { comparisonTask?.cancel() }
     func exportDifference() {
-        guard let difference else { return }
+        guard !comparing, let difference else { return }
         let panel = NSSavePanel(); panel.allowedContentTypes = [.png]; panel.nameFieldStringValue = "Difference.png"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { try Imaging.png(difference.overlay).write(to: url, options: .atomic); status = "Difference exported" } catch { status = error.localizedDescription }
@@ -173,7 +181,7 @@ struct WalkthroughView: View {
                 TextField("Title", text: $model.project.title).textFieldStyle(.plain).font(.headline)
                 Picker("Layout", selection: $model.mode) { Text("Walkthrough").tag("walkthrough"); Text("Vertical").tag("vertical"); Text("Side by Side").tag("horizontal"); if model.project.steps.count == 2 { Text("Compare").tag("compare") } }.labelsHidden().frame(width: 160)
                 Button("Save") { model.saveProject() }.keyboardShortcut("s", modifiers: .command)
-                Menu("Export") { Button(model.mode == "compare" ? "Difference PNG…" : "PNG…") { if model.mode == "compare" { model.exportDifference() } else { model.export("png") } }; Button("PDF · One Step per Page…") { model.export("pdf") }; Button("Markdown + Images…") { model.export("markdown") } }.fixedSize()
+                Menu("Export") { Button(model.mode == "compare" ? "Difference PNG…" : "PNG…") { if model.mode == "compare" { model.exportDifference() } else { model.export("png") } }.disabled(model.mode == "compare" && (model.comparing || model.difference == nil)); Button("PDF · One Step per Page…") { model.export("pdf") }; Button("Markdown + Images…") { model.export("markdown") } }.fixedSize()
             }.padding(16).background(.bar)
             Divider()
             HStack(spacing: 0) {

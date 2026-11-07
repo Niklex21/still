@@ -122,7 +122,7 @@ enum ReleaseReadinessSelfTest {
         interaction.present(expanded: true,manuallyOpened: true)
         try snapshot("history-shelf",ShelfView(store: store,interaction: interaction),CGSize(width: 760,height: 210))
         let batch = WalkthroughModel(items: [b,c],store: store); batch.mode = "compare"
-        batch.refreshDifference(); let compareDeadline = Date().addingTimeInterval(20)
+        batch.refreshDifference(); batch.tolerance = 48; batch.refreshDifference(); batch.tolerance = 0; batch.refreshDifference(); let compareDeadline = Date().addingTimeInterval(20)
         while batch.comparing && Date() < compareDeadline { settle() }
         try expect(batch.difference?.changedPixels == 0,"Compare computes identical captures without false differences")
         // Capture the comparison layout independently of whether there are changes.

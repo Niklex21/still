@@ -29,7 +29,7 @@ For Apple's real on-device model, run:
 dist/Still.app/Contents/MacOS/Still --visual-model-test
 ```
 
-This uses generated chart/shape images and the bundled app icon; it does not analyze your library. The semantic model may be unavailable on CI; `--allow-unavailable-model` explicitly logs that check as skipped. A controlled-analyzer pass must never be reported as a real inference pass.
+This uses generated chart/shape images and the bundled app icon; it does not analyze your library. System Vision OCR or the semantic model may be unavailable on a virtualized CI runner, even after an OCR CPU retry. `--allow-unavailable-model` explicitly logs only the affected model checks as skipped; failed assertions still fail the run. Strict local tests omit this flag and exercise real OCR/redaction retrieval. A controlled-analyzer pass must never be reported as a real inference pass.
 
 ## Manual gate before promoting a public release
 
@@ -53,4 +53,4 @@ The release-readiness branch is undergoing these checks. Do not treat this docum
 
 ### 2026-11-07 local evidence
 
-On Apple Silicon with macOS/Xcode 27: 38 Swift tests and 177 native checks passed; controlled visual-index lifecycle checks passed; real on-device chart, edited shape, and bundled icon inference passed. Raycast typecheck, five tests, isolated production build, and npm audit passed with zero advisories. The source installer built, verified, and installed into `.build/install-qa` without launching. The first new universal DMG mounted read-only, passed strict signature verification, exposed both architecture slices, and passed the same 177 native checks from its mounted bundle. These counts do not sign off the manual gate above. The final rebuilt artifact and remote CI are recorded in the PR.
+On Apple Silicon with macOS/Xcode 27: 38 Swift tests and 177 native checks passed; controlled visual-index lifecycle checks passed; real on-device chart, edited shape, and bundled icon inference passed. Raycast typecheck, five tests, isolated production build, and npm audit passed with zero advisories. The source installer built, verified, and installed into `.build/install-qa` without launching. The first new universal DMG mounted read-only, passed strict signature verification, exposed both architecture slices, and passed the same 177 native checks from its mounted bundle. These counts do not sign off the manual gate above. The final rebuilt artifact and remote CI are recorded in the PR. The expanded strict local suite now includes private walkthrough/cleanup protections, long PDF captions, and CPU OCR.

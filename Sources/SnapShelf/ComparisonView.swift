@@ -50,7 +50,7 @@ struct ComparisonView: View {
                     Text("Tolerance").font(.caption).foregroundStyle(.secondary)
                     Slider(value: $model.tolerance, in: 0...96, step: 8).frame(maxWidth: 140)
                     Spacer()
-                    if let result = model.difference { Text(result.changedFraction, format: .percent.precision(.fractionLength(1))).monospacedDigit(); Text("changed").foregroundStyle(.secondary) }
+                    if let result = model.difference { if result.comparedPixels == 0 { Text("No comparable pixels").foregroundStyle(.secondary) } else { Text(result.changedFraction, format: .percent.precision(.fractionLength(1))).monospacedDigit(); Text("changed").foregroundStyle(.secondary) } }
                 }
             } else { Slider(value: $model.comparison, in: 0...1).help("Reveal before / after") }
             HStack {
