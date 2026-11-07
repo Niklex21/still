@@ -326,13 +326,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         shelfPanel?.orderOut(nil)
         shelfInteraction.dismiss()
     }
-    func hideShelfIfReviewed() {
-        guard store.copiedID == nil, shelfInteraction.shouldHideWhenEmpty(queueCount: store.pendingCount) || shelfInteraction.shouldHideWhenMinimized(pendingCount: store.pendingCount) else { return }
+    func hideShelfIfReviewed(afterAction: Bool = false) {
+        guard store.copiedID == nil, shelfInteraction.shouldHide(queueCount: store.shelf.count, pendingCount: store.pendingCount, afterAction: afterAction) else { return }
         hideShelf()
     }
     func expandShelf(_ expanded: Bool) {
         guard let panel = shelfPanel, panel.isVisible else { return }
-        if store.copiedID == nil && (shelfInteraction.shouldHideWhenEmpty(queueCount: store.pendingCount) || (!expanded && shelfInteraction.shouldHideWhenMinimized(pendingCount: store.pendingCount))) {
+        if store.copiedID == nil && shelfInteraction.shouldHide(queueCount: store.shelf.count, pendingCount: store.pendingCount) {
             hideShelf()
             return
         }

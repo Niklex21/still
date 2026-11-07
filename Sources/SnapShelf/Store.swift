@@ -26,6 +26,7 @@ final class CaptureStore: ObservableObject {
     @Published private(set) var visualFailureReason: String?
     private let visualAnalyzer: any ImageAnalyzing
     private let automaticallyIndexVisuals: Bool
+    private let automaticallyIndexOCR: Bool
     private var visualTask: Task<Void, Never>?
     private var visualRetryTask: Task<Void, Never>?
     private var visualGeneration = 0
@@ -72,10 +73,11 @@ final class CaptureStore: ObservableObject {
             }
         }
     }
-    init(root: URL, preferences: CapturePreferences = CapturePreferences(), visualAnalyzer: any ImageAnalyzing = AppleImageAnalyzer(), startVisualIndexing: Bool = true, pasteboard: NSPasteboard = .general) throws {
+    init(root: URL, preferences: CapturePreferences = CapturePreferences(), visualAnalyzer: any ImageAnalyzing = AppleImageAnalyzer(), startVisualIndexing: Bool = true, startOCRIndexing: Bool = true, pasteboard: NSPasteboard = .general) throws {
         self.preferences = preferences
         self.pasteboard = pasteboard
         self.visualAnalyzer = visualAnalyzer
+        automaticallyIndexOCR = startOCRIndexing
         automaticallyIndexVisuals = startVisualIndexing && !ProcessInfo.processInfo.arguments.contains("--self-test")
         disk = try LibraryDisk(root: root)
         captures = try disk.load()
@@ -97,7 +99,7 @@ final class CaptureStore: ObservableObject {
         // Resume indexing interrupted by a quit or crash, including older indexes.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            for item in self.history where item.indexed != true && !self.indexing.contains(item.id) {
+            for item in self.history where self.automaticallyIndexOCR && item.indexed != true && !self.indexing.contains(item.id) {
                 if let image = try? Imaging.load(self.disk.url(item)) { self.index(item, image: image) }
             }
             self.startVisualIndexing()
@@ -312,7 +314,7 @@ final class CaptureStore: ObservableObject {
         }
     }
     func index(_ item: Capture, image: CGImage) {
-        guard !item.isPrivate else { return }
+        guard automaticallyIndexOCR, !item.isPrivate else { return }
         indexing.insert(item.id)
         let revision = item.revision
         ocrQueue.async {

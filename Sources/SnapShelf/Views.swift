@@ -270,9 +270,9 @@ struct ShelfView: View {
         .onChange(of: store.compactShelf.columnCount) { _, _ in
             if !interaction.expanded { AppDelegate.shared?.expandShelf(false) }
         }
-        .onChange(of: store.shelf.count) { _, _ in AppDelegate.shared?.hideShelfIfReviewed() }
+        .onChange(of: store.shelf.count) { _, _ in AppDelegate.shared?.hideShelfIfReviewed(afterAction: true) }
         .onChange(of: store.pendingCount) { _, _ in AppDelegate.shared?.hideShelfIfReviewed() }
-        .onChange(of: store.copiedID) { _, id in if id == nil { AppDelegate.shared?.hideShelfIfReviewed() } }
+        .onChange(of: store.copiedID) { _, id in if id == nil { AppDelegate.shared?.hideShelfIfReviewed(afterAction: true) } }
         .onDrop(of: [.fileURL], isTargeted: nil) { importDrop($0, store: store) }
     }
     private func updateVisibleItems(_ frames: [UUID: CGRect], size: CGSize) {
