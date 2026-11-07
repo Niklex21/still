@@ -1,0 +1,103 @@
+name: Checks
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: checks-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  native:
+    name: Native workflows and universal DMG
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          test "$(xcrun --sdk macosx --show-sdk-version | cut -d. -f1)" -ge 27
+      - name: Unit and native workflow tests
+        env:
+          CLANG_MODULE_CACHE_PATH: ${{ github.workspace }}/.build/module-cache
+          SWIFTPM_MODULECACHE_OVERRIDE: ${{ github.workspace }}/.build/module-cache
+          STILL_QA_OUTPUT: ${{ github.workspace }}/.build/qa-snapshots
+        run: |
+          swift test --disable-sandbox --cache-path .build/cache
+          bin_dir=$(swift build --disable-sandbox --cache-path .build/cache --show-bin-path)
+          "$bin_dir/Still" --self-test --allow-unavailable-model
+          "$bin_dir/Still" --visual-search-self-test
+      - name: Build universal preview
+        env:
+          STILL_RELEASE_LABEL: ci-${{ github.run_number }}
+        run: |
+          ./scripts/package-dmg.sh
+          lipo dist/Still.app/Contents/MacOS/Still -verify_arch arm64
+          lipo dist/Still.app/Contents/MacOS/Still -verify_arch x86_64
+          codesign --verify --deep --strict dist/Still.app
+          dist/Still.app/Contents/MacOS/Still --self-test --allow-unavailable-model
+      - name: Offscreen UI snapshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: synthetic-ui-snapshots
+          path: .build/qa-snapshots
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Preview DMG and checksum
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unnotarized-universal-preview
+          path: |
+            dist/*.dmg
+            dist/*.dmg.sha256
+          retention-days: 7
+  compatibility:
+    name: Packaged app on macOS 15
+    needs: native
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: unnotarized-universal-preview
+          path: preview
+      - name: Verify and test mounted app
+        run: |
+          cd preview
+          shasum -a 256 -c ./*.dmg.sha256
+          mkdir mounted
+          hdiutil attach -readonly -nobrowse -mountpoint "$PWD/mounted" ./*.dmg
+          trap 'hdiutil detach "$PWD/mounted"' EXIT
+          codesign --verify --deep --strict mounted/Still.app
+          lipo mounted/Still.app/Contents/MacOS/Still -verify_arch arm64
+          lipo mounted/Still.app/Contents/MacOS/Still -verify_arch x86_64
+          mounted/Still.app/Contents/MacOS/Still --self-test --allow-unavailable-model
+          mounted/Still.app/Contents/MacOS/Still --visual-search-self-test
+  raycast:
+    name: Raycast typecheck, tests, build, and audit
+    runs-on: macos-15
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: Raycast
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: Raycast/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm audit --audit-level=moderate
+      - run: ./node_modules/.bin/ray build --environment dist --output "$PWD/.raycast-qa" --non-interactive

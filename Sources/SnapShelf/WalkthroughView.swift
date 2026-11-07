@@ -7,6 +7,16 @@ final class WalkthroughModel: ObservableObject {
     @Published var project: Walkthrough
     @Published var mode = "walkthrough"
     @Published var comparison = 0.5
+    @Published var difference: ImageDifference?
+    @Published var differenceMode = false
+    @Published var alignComparison = true
+    @Published var tolerance = 24.0
+    @Published var ignoredRegions: [CGRect] = []
+    @Published var ignoringRegion = false
+    @Published var comparing = false
+    private var comparisonGeneration = 0
+    private let comparisonQueue = DispatchQueue(label: "Still.Comparison", qos: .userInitiated)
+    private var comparisonTask: DispatchWorkItem?
     @Published var status = ""
     @Published var preview: NSImage?
     @Published var dirty = false
@@ -51,13 +61,46 @@ final class WalkthroughModel: ObservableObject {
         }
         guard let output = ctx.makeImage() else { throw Imaging.ImageError.invalid }; return output
     }
+    func refreshDifference() {
+        comparisonGeneration += 1; comparisonTask?.cancel()
+        let generation = comparisonGeneration
+        guard project.steps.count == 2 else { difference = nil; comparing = false; return }
+        let urls = project.steps.compactMap { step in store.captures.first { $0.id == step.id }.map { store.disk.url($0) } }
+        guard urls.count == 2 else { difference = nil; comparing = false; status = "A source screenshot is missing"; return }
+        var options = DifferenceOptions(); options.align = alignComparison; options.tolerance = UInt8(tolerance); options.ignored = ignoredRegions
+        comparing = true
+        let task = DispatchWorkItem { [weak self] in
+            func source(_ url: URL) throws -> CGImage {
+                guard let file = CGImageSourceCreateWithURL(url as CFURL,nil), let image = CGImageSourceCreateThumbnailAtIndex(file,0,[kCGImageSourceCreateThumbnailFromImageAlways: true,kCGImageSourceThumbnailMaxPixelSize: 2000] as CFDictionary) else { throw Imaging.ImageError.invalid }
+                return image
+            }
+            let result = Result { try ImageDifference.compare(source(urls[0]),source(urls[1]),options: options) }
+            DispatchQueue.main.async {
+                guard let self, self.comparisonGeneration == generation else { return }
+                self.comparing = false
+                switch result {
+                case .success(let value): self.difference = value; self.status = ""
+                case .failure(let error): self.difference = nil; self.status = error.localizedDescription
+                }
+            }
+        }
+        comparisonTask = task; comparisonQueue.asyncAfter(deadline: .now() + 0.1, execute: task)
+    }
+    deinit { comparisonTask?.cancel() }
+    func exportDifference() {
+        guard !comparing, let difference else { return }
+        let panel = NSSavePanel(); panel.allowedContentTypes = [.png]; panel.nameFieldStringValue = "Difference.png"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try Imaging.png(difference.overlay).write(to: url, options: .atomic); status = "Difference exported" } catch { status = error.localizedDescription }
+    }
     func refreshPreview() {
-        if mode == "compare" { return }
+        if mode == "compare" { refreshDifference(); return }
         // Thumbnail input avoids allocating full-resolution batches during typing.
         do { let image = try composite(width: 300); preview = NSImage(cgImage: image, size: .zero); status = "" } catch { preview = nil; status = error.localizedDescription }
     }
     @discardableResult func saveProject() -> Bool {
         do {
+            guard !items.contains(where: \.isPrivate) else { status = "Private screenshots cannot be saved in a walkthrough"; return false }
             let folder = store.disk.root.appendingPathComponent("Walkthroughs", isDirectory: true); try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try JSONEncoder().encode(project).write(to: folder.appendingPathComponent("\(project.id).json"), options: .atomic)
             status = "Walkthrough saved"; dirty = false; store.objectWillChange.send(); return true
@@ -81,20 +124,30 @@ final class WalkthroughModel: ObservableObject {
             status = "Exported"
         } catch { status = error.localizedDescription }
     }
+    enum PDFError: LocalizedError {
+        case captionTooLong
+        var errorDescription: String? { "This caption is too long for a PDF page. Shorten it or export Markdown instead." }
+    }
     func pdf() throws -> Data {
         let data = NSMutableData()
         guard let consumer = CGDataConsumer(data: data), let ctx = CGContext(consumer: consumer, mediaBox: nil, nil) else { throw Imaging.ImageError.invalid }
-        let page = CGRect(x: 0, y: 0, width: 842, height: 595)
+        let titleFont = NSFont.systemFont(ofSize: 20, weight: .semibold), captionFont = NSFont.systemFont(ofSize: 13)
         for (i, step) in project.steps.enumerated() {
             try autoreleasepool {
-            let image = try input(step)
+            let image = try input(step), title = "\(i + 1). \(step.title)" as NSString
+            let titleHeight = ceil(title.boundingRect(with: CGSize(width: 778,height: 20000),options: [.usesLineFragmentOrigin,.usesFontLeading],attributes: [.font: titleFont]).height)
+            let captionHeight = ceil((step.caption as NSString).boundingRect(with: CGSize(width: 778,height: 20000),options: [.usesLineFragmentOrigin,.usesFontLeading],attributes: [.font: captionFont]).height)
+            let imageTop = 24 + titleHeight + 12 + captionHeight + 18
+            let desiredImageHeight = min(453,CGFloat(image.height) * min(1,778 / CGFloat(image.width)))
+            let page = CGRect(x: 0,y: 0,width: 842,height: max(595,imageTop + desiredImageHeight + 32))
+            guard page.height <= 14000 else { throw PDFError.captionTooLong }
             ctx.beginPDFPage([kCGPDFContextMediaBox as String: NSData(bytes: [page], length: MemoryLayout<CGRect>.size)] as CFDictionary)
             ctx.saveGState(); ctx.setFillColor(CGColor(gray: 1, alpha: 1)); ctx.fill(page); ctx.translateBy(x: 0, y: page.height); ctx.scaleBy(x: 1, y: -1)
             NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: true)
-            ("\(i + 1). \(step.title)" as NSString).draw(in: CGRect(x: 32, y: 24, width: 778, height: 32), withAttributes: [.font: NSFont.systemFont(ofSize: 20, weight: .semibold), .foregroundColor: NSColor.black])
-            (step.caption as NSString).draw(in: CGRect(x: 32, y: 60, width: 778, height: 44), withAttributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.darkGray])
-            let scale = min(778 / CGFloat(image.width), 453 / CGFloat(image.height)), size = CGSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
-            NSImage(cgImage: image, size: .zero).draw(in: CGRect(x: (842 - size.width) / 2, y: 110, width: size.width, height: size.height), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            title.draw(in: CGRect(x: 32,y: 24,width: 778,height: titleHeight+2),withAttributes: [.font: titleFont,.foregroundColor: NSColor.black])
+            (step.caption as NSString).draw(in: CGRect(x: 32,y: 24+titleHeight+12,width: 778,height: captionHeight+2),withAttributes: [.font: captionFont,.foregroundColor: NSColor.darkGray])
+            let scale = min(778 / CGFloat(image.width), (page.height-imageTop-32) / CGFloat(image.height)), size = CGSize(width: CGFloat(image.width)*scale,height: CGFloat(image.height)*scale)
+            NSImage(cgImage: image, size: .zero).draw(in: CGRect(x: (842-size.width)/2,y: imageTop,width: size.width,height: size.height),from: .zero,operation: .sourceOver,fraction: 1,respectFlipped: true,hints: nil)
             NSGraphicsContext.restoreGraphicsState(); ctx.restoreGState(); ctx.endPDFPage()
             }
         }
@@ -128,7 +181,7 @@ struct WalkthroughView: View {
                 TextField("Title", text: $model.project.title).textFieldStyle(.plain).font(.headline)
                 Picker("Layout", selection: $model.mode) { Text("Walkthrough").tag("walkthrough"); Text("Vertical").tag("vertical"); Text("Side by Side").tag("horizontal"); if model.project.steps.count == 2 { Text("Compare").tag("compare") } }.labelsHidden().frame(width: 160)
                 Button("Save") { model.saveProject() }.keyboardShortcut("s", modifiers: .command)
-                Menu("Export") { Button("PNG…") { model.export("png") }.disabled(model.mode == "compare"); Button("PDF · One Step per Page…") { model.export("pdf") }; Button("Markdown + Images…") { model.export("markdown") } }.fixedSize()
+                Menu("Export") { Button(model.mode == "compare" ? "Difference PNG…" : "PNG…") { if model.mode == "compare" { model.exportDifference() } else { model.export("png") } }.disabled(model.mode == "compare" && (model.comparing || model.difference == nil)); Button("PDF · One Step per Page…") { model.export("pdf") }; Button("Markdown + Images…") { model.export("markdown") } }.fixedSize()
             }.padding(16).background(.bar)
             Divider()
             HStack(spacing: 0) {
@@ -147,18 +200,7 @@ struct WalkthroughView: View {
                 }.frame(width: 310)
                 Divider()
                 if model.mode == "compare", model.items.count == 2 {
-                    VStack {
-                        GeometryReader { geometry in
-                            let first = model.store.thumbnail(model.items[0]), second = model.store.thumbnail(model.items[1])
-                            ZStack(alignment: .leading) {
-                                if let first { Image(nsImage: first).resizable().scaledToFit().frame(width: geometry.size.width, height: geometry.size.height) }
-                                if let second { Image(nsImage: second).resizable().scaledToFit().frame(width: geometry.size.width, height: geometry.size.height).mask(alignment: .leading) { Rectangle().frame(width: geometry.size.width * model.comparison) } }
-                                Rectangle().fill(.white).frame(width: 2).offset(x: geometry.size.width * model.comparison)
-                            }
-                        }
-                        Slider(value: $model.comparison, in: 0...1).help("Reveal before / after")
-                        HStack { Text(model.items[0].title); Spacer(); Text(model.items[1].title) }.font(.caption).foregroundStyle(.secondary)
-                    }.padding(24)
+                    ComparisonView(model: model)
                 } else {
                     ScrollView([.vertical, .horizontal]) { if let preview = model.preview { Image(nsImage: preview).resizable().scaledToFit().frame(width: min(1100, preview.size.width)) } }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity).background(Color(nsColor: .underPageBackgroundColor))
                 }

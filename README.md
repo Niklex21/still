@@ -15,15 +15,19 @@ Open the DMG, drag **Still** into **Applications**, then launch it. The app is s
 
 **Preview:** the download is ad-hoc signed and **not notarized**. macOS may block opening it because the developer cannot be verified; [Apple explains the available security controls](https://support.apple.com/en-us/102445). A Developer ID-signed, notarized release is the next distribution step. Source builds remain available below.
 
+[![Checks](https://github.com/Niklex21/still/actions/workflows/checks.yml/badge.svg)](https://github.com/Niklex21/still/actions/workflows/checks.yml) · [Security policy](SECURITY.md) · [Privacy and local data](docs/privacy.md) · [MIT license](LICENSE)
+
+Prefer to inspect and compile it yourself? Follow [Build and install](#build-and-install); no prebuilt executable or install-from-the-internet script is required.
+
 ## What it does
 
-- **Capture:** region, window, main screen, and manually scrolled screenshots. Center window captures on wallpaper or a customizable background.
+- **Capture:** region, window, main screen, and manually scrolled screenshots. Repeat the last region, delay a capture, or take a private region outside History. Center window captures on wallpaper or a customizable background.
 - **Keep screenshots handy:** up to three current previews, with an older queue behind them. Drag images into another app, copy, edit, save, dismiss, or pin them above your windows.
-- **Annotate without losing your edits:** arrows, shapes, freehand drawing, text, highlights, opaque redactions, numbered feedback pins, and reversible cropping. Saved marks stay editable.
+- **Annotate without losing your edits:** arrows, shapes, freehand drawing, text, highlights, opaque redactions, numbered feedback pins, and reversible cropping. Saved marks stay editable. Zoom/pan, inspect at 100% pixels, and edit text inline.
 - **Extract text:** recognize screenshot text locally, select words or a region, and copy any substring.
 - **Find things again:** search names, OCR, visual descriptions, tags, notes, and source metadata. Filter by application, capture type, time, tags, favorites, queue, or whether text was detected.
-- **Work with batches:** order screenshots, add step titles and captions, build walkthroughs, combine images vertically or side by side, or compare two images with a reveal slider.
-- **Export:** PNG, JPEG, or HEIC with scale, maximum pixel width, and compression controls. Walkthroughs export as a composite PNG, a PDF with one step per page, or Markdown with images.
+- **Work with batches:** order screenshots, add step titles and captions, build walkthroughs, combine images vertically or side by side, or compare two images with an aligned reveal slider or highlighted differences, adjustable tolerance, and ignored areas.
+- **Export:** PNG, JPEG, or HEIC with scale, maximum pixel width, and compression controls. Copy-for-sharing presets provide 1×, chat-ready, or a file under 2 MB. Destination apps can re-encode the pasted image. Walkthroughs export as a composite PNG, a PDF with one step per page, or Markdown with images.
 - **Stay in your flow:** customizable shortcuts and hover actions, a movable shelf, floating pins, optional launch at login, and Raycast integration.
 
 ## Requirements
@@ -36,7 +40,7 @@ Open the DMG, drag **Still** into **Applications**, then launch it. The app is s
 | OCR | Apple's built-in Vision framework; no separate model or service |
 | Semantic ranking | Apple's English sentence embedding model, when available |
 | Generated image descriptions | macOS 27+, an eligible Apple Intelligence Mac, Apple Intelligence enabled, and the system vision model ready |
-| Raycast extension | Raycast and Node.js; Node 22.6+ for the included TypeScript tests |
+| Raycast extension | Raycast and Node.js; Node 24 recommended (22.22.2+ required by the extension build tools) |
 
 The app checks model availability at runtime. Capture, annotation, history, OCR, and literal search remain usable without image descriptions. Semantic ranking falls back to literal results when the sentence model is unavailable.
 
@@ -52,7 +56,17 @@ cd still
 
 The script builds a release executable, assembles `dist/Still.app`, creates its icon sizes, includes the Raycast extension source, and signs the app ad hoc by default. There are no external Swift package dependencies.
 
-In Finder, open `dist` and move **Still.app** to **Applications**, then launch it. Install at `/Applications/Still.app` if you want Raycast semantic search: the extension invokes the app's executable there.
+In Finder, open `dist` and move **Still.app** to **Applications**, then launch it. Or inspect and run the local installer:
+
+```sh
+./scripts/install.sh
+# Optional user-local destination:
+# STILL_INSTALL_DIR="$HOME/Applications" ./scripts/install.sh
+```
+
+The installer builds locally, verifies the bundle, and installs it without launching it. Quit an existing Still process first. It does not download or run a prebuilt app, use sudo, or disable macOS security controls.
+
+ Install at `/Applications/Still.app` if you want Raycast semantic search: the extension invokes the app's executable there.
 
 For a stable local signing identity:
 
@@ -81,12 +95,20 @@ Hovering a preview dims its image and reveals corner actions. Configure their po
 
 - A successful drag into another app removes the image from the queue and keeps it in History. A canceled drag keeps it queued.
 - Copying, exporting, editing, or pinning also consumes its queue entry. Older images do not move into newly empty preview slots.
-- Closing the shelf clears the current preview batch. It keeps those images in History and preserves older queued images.
+- Closing the shelf dismisses the **entire pending queue**, including its older stack. Those images remain in History and do not return with the next capture.
 - Viewing an image clears its unread count without necessarily consuming it. The counter reflects queued images still waiting for attention.
-- Automatic previews collapse when you move away and hide once nothing remains unread. A shelf opened explicitly stays open until you dismiss it.
+- Automatic previews collapse when you move away and hide once nothing remains unread. A shelf opened explicitly stays open until you dismiss it. The side chevron opens History explicitly; hovering the older stack expands only the pending queue.
 - In History, **Move to Trash** deletes the capture's stored image files, rather than just removing its preview.
 
 The queue starts at the bottom left. **Pin to Screen** creates a separate floating image at the bottom right; additional pins overlap in a diagonal stack. Both remember moved positions. Drag a pin to move it, Option-drag to export it, and resize from a corner. Pins survive app restarts.
+
+### Repeat, delay, sharing, and privacy
+
+The menu bar includes **Repeat Last Region**, **Delayed Region**, and **Private Region**. Assign any of them a shortcut in Settings. Repeating validates the previous region against connected displays; if it is no longer available, select a new region. Set the delay to 3, 5, or 10 seconds in General; the small countdown has a cancel button.
+
+**Copy for Sharing** is available in screenshot actions and can be assigned a hover shortcut or corner. Choose the preset in Settings → Controls. Screen size uses the capture's display scale when known, otherwise preserves pixels. The under-2-MB preset creates a resized JPEG; the original remains intact.
+
+**Settings → Privacy** offers private captures and optional history retention. Retention is off by default and protects queued captures, favorites, pins, and saved walkthrough sources. Private captures use temporary files for drag and drop and are excluded from indexing/history. Read [data handling and redaction limitations](docs/privacy.md).
 
 ### Default shortcuts
 
@@ -244,3 +266,11 @@ Still is an early macOS app with a downloadable universal preview and source bui
 ## License
 
 [MIT](LICENSE). The app icon's source and generation notes are in [Resources/Icon-notes.md](Resources/Icon-notes.md).
+
+## Checks and release status
+
+Run `./scripts/check.sh` to execute Swift tests, synthetic native workflows, visual-index pipeline checks, and Raycast tests/build/audit. The workflow tests use temporary libraries, a separate clipboard, and offscreen bitmap rendering. They do not take screenshots of your desktop. UI snapshots contain synthetic fixtures and are written to `.build/qa-snapshots`.
+
+GitHub Actions repeats these checks on a separate Mac and assembles a universal DMG. CodeQL covers the optional Raycast JavaScript/TypeScript; the Swift app is not claimed to have a CodeQL audit. Dependencies are proposed for update by Dependabot. See [contributing](CONTRIBUTING.md), [security](SECURITY.md), and [the release QA matrix](docs/release-qa.md).
+
+Automated checks do not validate macOS privacy prompts, first launch from a browser download, every drag destination, Intel execution, or real scrolling behavior. Those remain explicit manual release checks. No public preview is represented as notarized or independently audited.

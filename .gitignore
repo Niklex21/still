@@ -27,3 +27,5 @@ Walkthroughs/
 *.provisionprofile
 *.key
 *.pem
+Private/
+Raycast/.raycast-qa/

@@ -7,8 +7,18 @@ final class CapturePreferences: ObservableObject {
     @Published var controls: HoverControls { didSet { save(controls, key: "hoverControls.v1") } }
     @Published var window: WindowAppearance { didSet { save(window, key: "windowAppearance.v1") } }
     @Published var visualSearchEnabled: Bool { didSet { defaults.set(visualSearchEnabled, forKey: "visualSearchEnabled.v1") } }
+    @Published var sharingPreset: SharingPreset { didSet { defaults.set(sharingPreset.rawValue, forKey: "sharingPreset.v1") } }
+    @Published var retentionDays: Int { didSet { defaults.set(retentionDays, forKey: "retentionDays.v1") } }
+    @Published var captureDelay: Int { didSet { defaults.set(captureDelay, forKey: "captureDelay.v1") } }
+    var lastRegion: CGRect? {
+        get { defaults.data(forKey: "lastRegion.v1").flatMap { try? JSONDecoder().decode(CGRect.self, from: $0) } }
+        set { if let newValue { save(newValue, key: "lastRegion.v1") } else { defaults.removeObject(forKey: "lastRegion.v1") } }
+    }
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        sharingPreset = defaults.string(forKey: "sharingPreset.v1").flatMap(SharingPreset.init) ?? .chat
+        let days = defaults.integer(forKey: "retentionDays.v1"); retentionDays = [7,30,90].contains(days) ? days : 0
+        let delay = defaults.integer(forKey: "captureDelay.v1"); captureDelay = [3,5,10].contains(delay) ? delay : 3
         visualSearchEnabled = defaults.object(forKey: "visualSearchEnabled.v1") as? Bool ?? true
         controls = defaults.data(forKey: "hoverControls.v1").flatMap { try? JSONDecoder().decode(HoverControls.self, from: $0) } ?? HoverControls()
         window = defaults.data(forKey: "windowAppearance.v1").flatMap { try? JSONDecoder().decode(WindowAppearance.self, from: $0) } ?? WindowAppearance()
@@ -67,6 +77,10 @@ struct HoverControlsSettings: View {
                 Slider(value: $preferences.controls.buttonSize, in: 28...40, step: 2) { Text("Button size") }
                 Slider(value: $preferences.controls.dimming, in: 0.1...0.6) { Text("Dim screenshot") }
                 Toggle("Hide date", isOn: $preferences.controls.hideDate)
+            }
+            Section("Quick sharing") {
+                Picker("Copy for Sharing", selection: $preferences.sharingPreset) { ForEach(SharingPreset.allCases) { Text($0.title).tag($0) } }
+                Text("Preserves the original. Destination apps may re-encode pasted images.").font(.caption).foregroundStyle(.secondary)
             }
             Button("Restore Controls") { preferences.controls = HoverControls() }
         }.formStyle(.grouped)

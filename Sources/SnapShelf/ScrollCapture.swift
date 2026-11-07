@@ -13,8 +13,9 @@ final class SelectionPanel: NSPanel {
 final class RegionSelector {
     var panels: [NSPanel] = []
     let completion: (CGRect?) -> Void
+    let instructions: String
     var completed = false
-    init(completion: @escaping (CGRect?) -> Void) { self.completion = completion }
+    init(instructions: String = "Select scrolling content · Drag a region · Esc to cancel", completion: @escaping (CGRect?) -> Void) { self.instructions = instructions; self.completion = completion }
     func start() {
         Task { @MainActor in
             let screens = NSScreen.screens
@@ -40,6 +41,7 @@ final class RegionSelector {
             if let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber, let background = backgrounds[id.uint32Value] {
                 view.backgroundImage = NSImage(cgImage: background, size: screen.frame.size)
             }
+            view.instructions = instructions
             view.selection = { [weak self] local in
                 guard let self else { return }
                 if let local {
@@ -61,6 +63,7 @@ final class RegionSelector {
 
 final class SelectionView: NSView {
     var backgroundImage: NSImage?
+    var instructions = "Select scrolling content · Drag a region · Esc to cancel"
     var selection: ((CGRect?) -> Void)?
     var start: CGPoint?
     var end: CGPoint?
@@ -73,7 +76,7 @@ final class SelectionView: NSView {
             shade.appendRect(CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y)))
         }
         NSColor.black.withAlphaComponent(0.25).setFill(); shade.fill()
-        let title = "Select the scrolling content · Drag a region · Esc to cancel"
+        let title = instructions
         (title as NSString).draw(at: NSPoint(x: bounds.midX - 260, y: bounds.maxY - 90), withAttributes: [.font: NSFont.systemFont(ofSize: 17, weight: .semibold), .foregroundColor: NSColor.white])
         if let start, let end {
             let rect = CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))

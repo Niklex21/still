@@ -39,6 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
     var capturing = false
     var scrollSession: ScrollCapture?
     var selection: RegionSelector?
+    var countdown: CaptureCountdown?
+    var captureProcess: Process?
     var demo = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -64,6 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         shortcuts.onAction = { [weak self] action in
             guard let self else { return }
             switch action {
+            case .repeatRegion: self.capture(.region, repeatLast: true)
+            case .delayedRegion: self.capture(.region, delay: self.store.preferences.captureDelay)
+            case .privateRegion: self.capture(.region, privateCapture: true)
             case .region: self.capture(.region)
             case .window: self.capture(.window)
             case .screen: self.capture(.screen)
@@ -86,6 +91,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         if demo { seedDemo() }
         if demo { showLibrary(); showShelf(manuallyOpened: false) }
         else if !loginLaunch && !ProcessInfo.processInfo.arguments.contains("--background") && store.shelf.count > 0 { showShelf(manuallyOpened: false) }
+    }
+    func applicationWillTerminate(_ notification: Notification) {
+        countdown?.finish(canceled: true)
+        if captureProcess?.isRunning == true { captureProcess?.terminate() }
+        store?.clearPrivateCaptures()
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -122,6 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         appItem.submenu = app; main.addItem(appItem)
         let file = NSMenuItem(); file.title = "File"; let fileMenu = NSMenu(title: "File")
         for (index, mode) in CaptureMode.allCases.enumerated() { let item = NSMenuItem(title: mode.title, action: #selector(captureMenu(_:)), keyEquivalent: ""); item.tag = index; fileMenu.addItem(item) }
+        addExtraCaptureItems(to: fileMenu)
         fileMenu.addItem(.separator()); fileMenu.addItem(withTitle: "Import Images…", action: #selector(importAction), keyEquivalent: "o")
         file.submenu = fileMenu; main.addItem(file)
         let edit = NSMenuItem(); edit.title = "Edit"; let editMenu = NSMenu(title: "Edit")
@@ -135,7 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         edit.submenu = editMenu; main.addItem(edit)
         let window = NSMenuItem(); window.title = "Window"; let wm = NSMenu(title: "Window")
         wm.addItem(withTitle: "Library", action: #selector(libraryAction), keyEquivalent: "l")
-        wm.addItem(withTitle: "Shelf", action: #selector(shelfAction), keyEquivalent: "0")
+        wm.addItem(withTitle: "Shelf", action: #selector(shelfAction), keyEquivalent: "")
         wm.addItem(withTitle: "Search", action: #selector(searchAction), keyEquivalent: "f")
         wm.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         window.submenu = wm; main.addItem(window); NSApp.mainMenu = main
@@ -143,6 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         status.button?.image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "Still")
         let menu = NSMenu()
         for (index, mode) in CaptureMode.allCases.enumerated() { let item = NSMenuItem(title: mode.title, action: #selector(captureMenu(_:)), keyEquivalent: ""); item.tag = index; menu.addItem(item) }
+        addExtraCaptureItems(to: menu)
         menu.addItem(.separator()); menu.addItem(withTitle: "Show Shelf", action: #selector(shelfAction), keyEquivalent: "")
         menu.addItem(withTitle: "Search Library…", action: #selector(searchAction), keyEquivalent: "")
         menu.addItem(withTitle: "Paste Image", action: #selector(pasteAction), keyEquivalent: "")
@@ -150,6 +162,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         menu.addItem(.separator()); menu.addItem(withTitle: "Quit Still", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
         status.menu = menu
     }
+    func addExtraCaptureItems(to menu: NSMenu) {
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Repeat Last Region", action: #selector(repeatRegionAction), keyEquivalent: "")
+        menu.addItem(withTitle: "Delayed Region…", action: #selector(delayedRegionAction), keyEquivalent: "")
+        menu.addItem(withTitle: "Private Region…", action: #selector(privateRegionAction), keyEquivalent: "")
+    }
+    @objc func repeatRegionAction() { capture(.region, repeatLast: true) }
+    @objc func delayedRegionAction() { capture(.region, delay: store.preferences.captureDelay) }
+    @objc func privateRegionAction() { capture(.region, privateCapture: true) }
     @objc func captureMenu(_ sender: NSMenuItem) { capture(CaptureMode.allCases[sender.tag]) }
     @objc func importAction() { store.chooseImages() }
     @objc func pasteAction() {
@@ -158,17 +179,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
     @objc func closeWindowsAction() {
         dismissShelf()
         libraryWindow?.orderOut(nil); settingsWindow?.orderOut(nil)
-        editors.values.forEach { $0.window?.orderOut(nil) }
+        Array(editors.values).forEach { $0.window?.performClose(nil) }
         descriptionWindows.values.forEach { $0.window?.orderOut(nil) }
-        ExportController.windows.forEach { $0.window?.orderOut(nil) }
-        WalkthroughController.windows.forEach { $0.window?.orderOut(nil) }
+        Array(ExportController.windows).forEach { $0.window?.performClose(nil) }
+        Array(WalkthroughController.windows).forEach { $0.window?.performClose(nil) }
     }
     @objc func shelfAction() { showShelf() }
     @objc func libraryAction() { showLibrary() }
     @objc func searchAction() { showLibrary(); libraryWindow?.makeFirstResponder(librarySearchField); librarySearchField?.selectText(nil) }
     @objc func settingsAction() { showSettings() }
     @objc func about() {
-        let alert = NSAlert(); alert.messageText = "Still 1.0"; alert.informativeText = "Capture. Keep. Make your point.\n\nA local screenshot workspace for your Mac.\nBuilt for personal use. No account or subscription."; alert.runModal()
+        let alert = NSAlert(); alert.messageText = "Still \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.1")"; alert.informativeText = "Capture. Keep. Make your point.\n\nA local screenshot workspace for your Mac.\nOpen source. No account or subscription."; alert.runModal()
     }
     var compactShelfSize: CGSize {
         let contents = store.compactShelf
@@ -186,13 +207,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         guard !capturing, scrollSession == nil, let id = hoveredCaptureID,
               let item = store.captures.first(where: { $0.id == id }) else { return }
         switch action {
+        case .copySharingHovered: store.copyForSharing(item)
         case .copyHovered: store.copy(item)
         case .editHovered: edit(item)
         case .pinHovered: store.togglePin(id)
         case .exportHovered: store.export(item)
         case .reviewHovered: store.markReviewed(id)
         case .removeHovered:
-            if hoverSource.hasPrefix("library:") || (hoverSource == "shelf" && shelfInteraction.expanded) {
+            if hoverSource.hasPrefix("library:") || (hoverSource == "shelf" && shelfInteraction.manuallyOpened) {
                 store.delete(item)
             } else {
                 store.update(id) { $0.onShelf = false }
@@ -213,6 +235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
             else if pinned && item.isPinned { store.togglePin(item.id) } else { store.consume(item.id) }
         case .pin: store.togglePin(item.id)
         case .edit: edit(item)
+        case .copySharing: store.copyForSharing(item)
         case .copy: store.copy(item)
         case .save: store.export(item)
         case .upload: store.prepareUpload(item)
@@ -220,7 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         case .reveal: store.showInFinder(item)
         case .description: showDescription(item.id)
         case .history:
-            if let interaction, !pinned { interaction.setExpanded(true) } else { showShelf() }
+            showShelf(manuallyOpened: true)
         }
     }
     func showDescription(_ id: UUID) {
@@ -284,7 +307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
             shelfInteraction.present(expanded: manuallyOpened, manuallyOpened: manuallyOpened)
             let origin = PanelPlacement.savedPoint("shelfOrigin.v2") ?? panel.frame.origin
             let screen = PanelPlacement.screen(containing: origin)?.visibleFrame ?? panel.frame
-            let size = ShelfLayout.panelSize(expanded: manuallyOpened, compact: compactShelfSize, current: compactShelfSize, shelfCount: store.captures.count, availableWidth: screen.width - 20)
+            let size = ShelfLayout.panelSize(expanded: manuallyOpened, compact: compactShelfSize, current: compactShelfSize, shelfCount: shelfInteraction.manuallyOpened ? store.history.count : store.shelf.count, availableWidth: screen.width - 20)
             shelfPositionMemory.applyingLayout = true
             panel.hasShadow = manuallyOpened
             panel.setFrame(PanelPlacement.shelfFrame(size: size, screen: screen, origin: origin), display: false)
@@ -303,20 +326,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         shelfPanel?.orderOut(nil)
         shelfInteraction.dismiss()
     }
-    func hideShelfIfReviewed() {
-        guard store.copiedID == nil, shelfInteraction.shouldHideWhenMinimized(pendingCount: store.shelf.count) else { return }
+    func hideShelfIfReviewed(afterAction: Bool = false) {
+        guard store.copiedID == nil, shelfInteraction.shouldHide(queueCount: store.shelf.count, pendingCount: store.pendingCount, afterAction: afterAction) else { return }
         hideShelf()
     }
     func expandShelf(_ expanded: Bool) {
         guard let panel = shelfPanel, panel.isVisible else { return }
-        if !expanded && store.copiedID == nil && shelfInteraction.shouldHideWhenMinimized(pendingCount: store.shelf.count) {
+        if store.copiedID == nil && shelfInteraction.shouldHide(queueCount: store.shelf.count, pendingCount: store.pendingCount) {
             hideShelf()
             return
         }
         panel.hasShadow = expanded
         let old = panel.frame
         let screen = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? old
-        let size = ShelfLayout.panelSize(expanded: expanded, compact: compactShelfSize, current: old.size, shelfCount: store.captures.count, availableWidth: screen.width - 20)
+        let size = ShelfLayout.panelSize(expanded: expanded, compact: compactShelfSize, current: old.size, shelfCount: shelfInteraction.manuallyOpened ? store.history.count : store.shelf.count, availableWidth: screen.width - 20)
         let width = size.width, height = size.height
         // Keep the panel within the current display, including when it is near the right edge.
         if expanded { shelfExpandsLeft = old.minX + width > screen.maxX }
@@ -405,7 +428,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         }
         settingsWindow?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
-    func capture(_ mode: CaptureMode) {
+    var captureScreens: [CGRect] {
+        let mainTop = NSScreen.screens.first?.frame.maxY ?? 0
+        return NSScreen.screens.map { CGRect(x: $0.frame.minX,y: mainTop - $0.frame.maxY,width: $0.frame.width,height: $0.frame.height) }
+    }
+    func capture(_ mode: CaptureMode, repeatLast: Bool = false, delay: Int = 0, privateCapture: Bool = false) {
         guard !capturing, scrollSession == nil else { return }
         guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else {
             let alert = NSAlert(); alert.messageText = "Allow Still to capture your screen"
@@ -414,40 +441,70 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
             if alert.runModal() == .alertFirstButtonReturn { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!) }; return
         }
         let sourceApp = NSWorkspace.shared.frontmostApplication
-        let sourceWindows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        let sourceWindows = CGWindowListCopyWindowInfo([.optionOnScreenOnly,.excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         let sourceTitle = sourceWindows.first { ($0[kCGWindowOwnerPID as String] as? Int32) == sourceApp?.processIdentifier && ($0[kCGWindowLayer as String] as? Int) == 0 }?[kCGWindowName as String] as? String
-        let sourceMetadata = CaptureMetadata(application: sourceApp?.localizedName, bundleIdentifier: sourceApp?.bundleIdentifier, windowTitle: sourceTitle, kind: mode.rawValue.capitalized)
-        capturing = true
-        hoveredCaptureID = nil; hoverSource = ""; shortcuts.setHoveredTargetActive(false)
-        shelfInteraction.pointer(over: shelfInteraction.hoveredID ?? UUID(), inside: false)
+        var metadata = CaptureMetadata(application: privateCapture ? nil : sourceApp?.localizedName, bundleIdentifier: privateCapture ? nil : sourceApp?.bundleIdentifier, windowTitle: privateCapture ? nil : sourceTitle, kind: privateCapture ? "Private" : mode.rawValue.capitalized)
+        metadata.pixelScale = Double(NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1)
+        capturing = true; clearHoverTarget()
         let visible = NSApp.windows.filter { $0.isVisible && $0 != status.button?.window }
-        for window in visible { window.orderOut(nil) }
-        if mode == .scrolling {
-            selection = RegionSelector { [weak self] rect in
-                guard let self else { return }; self.selection = nil; self.capturing = false
-                guard let rect else { visible.forEach { $0.orderFront(nil) }; return }
-                self.scrollSession = ScrollCapture(rect: rect, store: self.store, metadata: sourceMetadata) {
-                    self.scrollSession = nil
+        visible.forEach { $0.orderOut(nil) }
+        func restore() { self.capturing = false; visible.forEach { $0.orderFront(nil) }; sourceApp?.activate(options: []) }
+        func run(region: CGRect?) {
+            func execute() {
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent("Still-\(UUID()).png")
+                let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+                var arguments = ["-x","-t","png"]
+                if let region { arguments.append(CaptureRegion.arguments(region)) }
+                else if mode == .screen { arguments.append("-m") }
+                else if mode == .window { arguments += ["-i","-w","-o"] }
+                arguments.append(url.path); process.arguments = arguments; self.captureProcess = process
+                process.terminationHandler = { [weak self] child in DispatchQueue.main.async {
+                    guard let self else { try? FileManager.default.removeItem(at: url); return }
+                    self.captureProcess = nil; self.capturing = false
                     self.pinnedWindows.values.forEach { $0.window?.orderFrontRegardless() }
-                }
-                self.scrollSession?.start()
+                    defer { try? FileManager.default.removeItem(at: url) }
+                    guard child.terminationStatus == 0, FileManager.default.fileExists(atPath: url.path) else { restore(); return }
+                    do {
+                        let image = try Imaging.load(url)
+                        // Derive scale from actual output: repeat-region may run while
+                        // the pointer is on a different display.
+                        if let region { metadata.pixelScale = Double(image.width) / max(1,Double(region.width.rounded())) }
+                        else if mode == .screen, let primary = NSScreen.screens.first { metadata.pixelScale = Double(image.width) / max(1,Double(primary.frame.width)) }
+                        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }
+                        try self.store.add(mode == .window ? self.store.preferences.frameWindow(image, screen: screen) : image, metadata: metadata, privateCapture: privateCapture)
+                    } catch { self.store.error = error.localizedDescription; restore(); self.showLibrary() }
+                } }
+                do { try process.run() } catch { self.captureProcess = nil; self.store.error = error.localizedDescription; restore() }
             }
-            selection?.start(); return
+            if delay > 0 {
+                self.countdown = CaptureCountdown(seconds: delay, screen: NSScreen.main) { [weak self] canceled in
+                    self?.countdown = nil
+                    if canceled { restore() } else { DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: execute) }
+                }
+                self.countdown?.start()
+            } else { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: execute) }
         }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Still-\(UUID()).png")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-            process.arguments = ["-x", "-t", "png"] + (mode == .screen ? ["-m"] : mode == .window ? ["-i", "-w", "-o"] : ["-i"]) + [url.path]
-            process.terminationHandler = { _ in DispatchQueue.main.async {
-                self.capturing = false
-                self.pinnedWindows.values.forEach { $0.window?.orderFrontRegardless() }
-                if FileManager.default.fileExists(atPath: url.path) {
-                    do { let image = try Imaging.load(url); try self.store.add(mode == .window ? self.store.preferences.frameWindow(image, screen: NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }) : image, metadata: sourceMetadata) } catch { self.store.error = error.localizedDescription; self.showLibrary() }
-                    try? FileManager.default.removeItem(at: url)
-                } else { visible.forEach { $0.orderFront(nil) } }
-            } }
-            do { try process.run() } catch { self.capturing = false; self.store.error = error.localizedDescription; visible.forEach { $0.orderFront(nil) } }
-        }
+        if mode == .region || mode == .scrolling {
+            if repeatLast, let region = store.preferences.lastRegion, CaptureRegion.valid(region, within: captureScreens) { run(region: region); return }
+            selection = RegionSelector(instructions: mode == .scrolling ? "Select scrolling content · Drag a region · Esc to cancel" : privateCapture ? "Private capture · Drag a region · Esc to cancel" : "Capture region · Drag to select · Esc to cancel") { [weak self] region in
+                guard let self else { return }; self.selection = nil
+                guard let region, CaptureRegion.valid(region, within: self.captureScreens) else { restore(); return }
+                sourceApp?.activate(options: [])
+                let mainTop = NSScreen.screens.first?.frame.maxY ?? 0
+                if let display = NSScreen.screens.first(where: { CGRect(x: $0.frame.minX,y: mainTop-$0.frame.maxY,width: $0.frame.width,height: $0.frame.height).contains(CGPoint(x: region.midX,y: region.midY)) }) { metadata.pixelScale = Double(display.backingScaleFactor) }
+                if mode == .scrolling {
+                    self.capturing = false
+                    self.scrollSession = ScrollCapture(rect: region, store: self.store, metadata: metadata) {
+                        self.scrollSession = nil; self.pinnedWindows.values.forEach { $0.window?.orderFrontRegardless() }
+                    }
+                    self.scrollSession?.start()
+                } else {
+                    if !privateCapture { self.store.preferences.lastRegion = region }
+                    run(region: region)
+                }
+            }
+            selection?.start()
+        } else { run(region: nil) }
     }
     func seedDemo() {
         guard store.captures.isEmpty else { return }
@@ -473,6 +530,7 @@ struct SettingsView: View {
             general.tabItem { Label("General", systemImage: "gearshape") }
             HoverControlsSettings(preferences: preferences).tabItem { Label("Controls", systemImage: "cursorarrow.click") }
             WindowAppearanceSettings(preferences: preferences, root: store.disk.root).tabItem { Label("Background", systemImage: "photo") }
+            PrivacySettings(store: store, preferences: preferences).tabItem { Label("Privacy", systemImage: "lock") }
             VisualSearchSettings(store: store, preferences: preferences).tabItem { Label("Search", systemImage: "sparkle.magnifyingglass") }
             ShortcutSettingsView(manager: shortcuts).tabItem { Label("Shortcuts", systemImage: "keyboard") }
         }.padding(8).frame(width: 620, height: 560)
@@ -481,6 +539,7 @@ struct SettingsView: View {
         Form {
             Section("Your workflow") {
                 Toggle("Show shelf after every capture", isOn: $autoShelf)
+                Picker("Capture countdown", selection: $preferences.captureDelay) { Text("3 seconds").tag(3); Text("5 seconds").tag(5); Text("10 seconds").tag(10) }
                 Text("Still runs in the menu bar when its windows are closed.").font(.caption).foregroundStyle(.secondary)
                 Toggle("Launch at login", isOn: $login).onChange(of: login) { _, enabled in UserDefaults.standard.set(enabled, forKey: "launchAtLogin"); do { if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() } } catch { message = error.localizedDescription; login = SMAppService.mainApp.status == .enabled } }
             }

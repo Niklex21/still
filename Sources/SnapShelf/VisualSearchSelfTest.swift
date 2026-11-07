@@ -61,7 +61,7 @@ enum VisualSearchSelfTest {
         let defaults = UserDefaults(suiteName: suite)!
         defer { try? FileManager.default.removeItem(at: root); defaults.removePersistentDomain(forName: suite) }
         let preferences = CapturePreferences(defaults: defaults), analyzer = ControlledImageAnalyzer()
-        let store = try CaptureStore(root: root, preferences: preferences, visualAnalyzer: analyzer)
+        let store = try CaptureStore(root: root, preferences: preferences, visualAnalyzer: analyzer, startOCRIndexing: false)
         let first = try store.add(fixture(chart: true), title: "First")
         try await wait("first analysis starts") { await analyzer.count() == 1 }
         let second = try store.add(fixture(chart: true), title: "Second")
@@ -99,10 +99,11 @@ enum VisualSearchSelfTest {
         try expect(await analyzer.maximumConcurrent() == 1, "Only one image is analyzed at a time")
 
         let failed = try store.add(fixture(chart: true), title: "Retry")
+        store.update(failed.id) { $0.text = "Receipt"; $0.indexed = true }
         try await wait("failure job starts") { await analyzer.count() == 7 }
         await analyzer.fail()
         try await wait("failure is recorded") { store.visualFailures[failed.id] != nil && store.visualIndexingID == nil }
-        try expect(store.error == nil, "A model failure leaves capture and OCR usable without an error popup")
+        try expect(store.error == nil && store.captures.first(where: { $0.id == failed.id })?.text == "Receipt", "A model failure preserves the capture and existing OCR without an error popup")
         store.retryVisualIndexing()
         try await wait("retry job starts") { await analyzer.count() == 8 }
         await analyzer.complete("Blue chart")
@@ -111,7 +112,7 @@ enum VisualSearchSelfTest {
 
         preferences.visualSearchEnabled = false
         try await Task.sleep(for: .milliseconds(80))
-        let recovered = try CaptureStore(root: root, preferences: preferences, visualAnalyzer: analyzer, startVisualIndexing: false)
+        let recovered = try CaptureStore(root: root, preferences: preferences, visualAnalyzer: analyzer, startVisualIndexing: false, startOCRIndexing: false)
         try expect(recovered.filtered.count == 4, "Restart loads the existing library while analysis is paused")
         await analyzer.setReady(false)
         preferences.visualSearchEnabled = true

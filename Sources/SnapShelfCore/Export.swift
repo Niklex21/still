@@ -36,3 +36,27 @@ public struct ExportOptions {
         guard CGImageDestinationFinalize(destination) else { throw Imaging.ImageError.invalid }; return data as Data
     }
 }
+
+public struct SharingImage {
+    public let data: Data
+    public let format: ExportFormat
+    public let width: Int
+    public let height: Int
+    public static func prepare(_ source: CGImage, preset: SharingPreset, pixelScale: Double?) throws -> SharingImage {
+        var options = preset.options(pixelScale: pixelScale)
+        for _ in 0..<18 {
+            let data = try options.encode(source)
+            let size = try options.dimensions(width: source.width, height: source.height)
+            if preset.byteLimit.map({ data.count <= $0 }) ?? true {
+                return SharingImage(data: data, format: options.format, width: size.0, height: size.1)
+            }
+            if options.quality > 0.58 { options.quality = max(0.58, options.quality - 0.1) }
+            else { options.maxWidth = max(64, Int(Double(size.0) * 0.8)); options.scale = min(options.scale, Double(options.maxWidth) / Double(source.width)) }
+        }
+        throw SharingError.cannotFit
+    }
+    public enum SharingError: LocalizedError {
+        case cannotFit
+        public var errorDescription: String? { "The image could not fit the selected file limit. Try a smaller export." }
+    }
+}

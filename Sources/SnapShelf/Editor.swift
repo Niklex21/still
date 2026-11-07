@@ -35,6 +35,8 @@ final class EditorModel: ObservableObject {
     @Published var canRedo = false
     @Published var dirty = false
     @Published var status = "Drag on the image to draw an arrow."
+    var pasteboard = NSPasteboard.general
+    @Published var zoomLabel = "Fit"
     @Published var selected: UUID?
     @Published var recognizedText = ""
     @Published var showText = false
@@ -48,17 +50,20 @@ final class EditorController: NSWindowController, NSWindowDelegate {
     let item: Capture
     let store: CaptureStore
     let model = EditorModel()
+    private var privateLease = false
     init(item: Capture, store: CaptureStore) throws {
         self.item = item; self.store = store
         let image: CGImage
         if let document = item.editDocument {
             guard document.version == 1, URL(fileURLWithPath: document.baseFilename).lastPathComponent == document.baseFilename else { throw CocoaError(.fileReadCorruptFile) }
-            image = try Imaging.load(store.disk.images.appendingPathComponent(document.baseFilename))
+            image = try Imaging.load(store.disk.baseURL(item, filename: document.baseFilename))
         } else { image = try Imaging.load(store.disk.url(item)) }
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 800), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "Annotate — \(item.title)"; window.minSize = NSSize(width: 850, height: 600); window.isReleasedWhenClosed = false
         super.init(window: window)
         window.delegate = self
+        if item.isPrivate { store.retainPrivate(item.id); privateLease = true }
+        model.pasteboard = store.pasteboard
         model.canvas = AnnotationCanvas(image: image, model: model)
         if let doc = item.editDocument { model.canvas.state.marks = doc.annotations.compactMap(Mark.init); model.canvas.state.crop = doc.crop }
         model.status = "\(image.width) × \(image.height) · Shift constrains shapes"
@@ -68,15 +73,22 @@ final class EditorController: NSWindowController, NSWindowDelegate {
     }
     required init?(coder: NSCoder) { fatalError() }
     func save() {
+        model.canvas.finishInlineEditing(commit: true)
+        guard model.dirty else { model.status = "Saved"; return }
         do { try store.saveEdit(item.id, image: model.canvas.render(), document: EditDocument(baseFilename: "\(item.id)-edit-base-\(UUID()).png", annotations: model.canvas.state.marks.map(\.archive), crop: model.canvas.state.crop), base: model.canvas.state.image); model.dirty = false; model.status = "Saved · annotations remain editable" }
         catch { model.status = "Could not save: \(error.localizedDescription)" }
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        model.canvas.finishInlineEditing(commit: true)
         guard model.dirty else { return true }
         let alert = NSAlert(); alert.messageText = "Save your annotations?"; alert.addButton(withTitle: "Save"); alert.addButton(withTitle: "Discard"); alert.addButton(withTitle: "Cancel")
         switch alert.runModal() { case .alertFirstButtonReturn: save(); return !model.dirty; case .alertSecondButtonReturn: return true; default: return false }
     }
-    func windowWillClose(_ notification: Notification) { AppDelegate.shared.editors.removeValue(forKey: item.id) }
+    func windowWillClose(_ notification: Notification) {
+        if privateLease { privateLease = false; store.releasePrivate(item.id) }
+        AppDelegate.shared?.editors.removeValue(forKey: item.id)
+    }
+    deinit { if privateLease { store.releasePrivate(item.id) } }
     func revert() {
         let alert = NSAlert(); alert.messageText = "Revert to the original image?"; alert.informativeText = "This resets this editing session. You can undo before saving."; alert.addButton(withTitle: "Revert"); alert.addButton(withTitle: "Cancel")
         if alert.runModal() == .alertFirstButtonReturn {
@@ -114,7 +126,7 @@ struct EditorView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack { Text("Recognized text").font(.headline); Spacer(); Button { model.showText = false } label: { Image(systemName: "xmark") }.buttonStyle(.plain) }
                         TextEditor(text: $model.recognizedText).font(.system(size: 13)).scrollContentBackground(.hidden)
-                        Button("Copy Text") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(model.recognizedText, forType: .string); model.status = "Text copied" }.disabled(model.recognizedText.isEmpty)
+                        Button("Copy Text") { store.pasteboard.clearContents(); model.pasteboard.setString(model.recognizedText, forType: .string); model.status = "Text copied" }.disabled(model.recognizedText.isEmpty)
                     }.padding(16).frame(width: 260)
                 }
                 if !model.suggestions.isEmpty {
@@ -131,6 +143,15 @@ struct EditorView: View {
             }
             Divider()
             HStack {
+                HStack(spacing: 4) {
+                    Button { model.canvas.zoom(by: 1 / 1.25) } label: { Image(systemName: "minus.magnifyingglass") }.help("Zoom out · ⌘−")
+                    Menu(model.zoomLabel) {
+                        Button("Fit") { model.canvas.fitImage() }
+                        Button("100% pixels") { model.canvas.actualPixels() }
+                        Button("200% pixels") { model.canvas.actualPixels(multiplier: 2) }
+                    }.frame(width: 68)
+                    Button { model.canvas.zoom(by: 1.25) } label: { Image(systemName: "plus.magnifyingglass") }.help("Zoom in · ⌘+")
+                }.buttonStyle(.borderless)
                 Text(model.status).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
                 Spacer()
                 if model.canvas.state.crop != nil { Button("Reset Crop") { model.canvas.checkpoint(); model.canvas.state.crop = nil; model.canvas.changed() }.font(.system(size: 11)) }
@@ -154,7 +175,7 @@ struct CanvasRepresentable: NSViewRepresentable {
     func updateNSView(_ nsView: AnnotationCanvas, context: Context) { nsView.needsDisplay = true }
 }
 
-final class AnnotationCanvas: NSView {
+final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     var state: CanvasState
     unowned let model: EditorModel
     var past: [CanvasState] = []
@@ -163,6 +184,13 @@ final class AnnotationCanvas: NSView {
     var start: CGPoint?
     var regions: [TextRegion] = []
     var contentGeneration = 0
+    var viewport = EditorViewport()
+    private var spaceHeld = false
+    private var panStart: CGPoint?
+    private var panOrigin = CGPoint.zero
+    private(set) var inlineField: NSTextField?
+    private var inlineMark: Mark?
+    private var finishingInline = false
     var selectionStart: [CGPoint]?
     var resizing = false
     var selectionCheckpointed = false
@@ -171,11 +199,46 @@ final class AnnotationCanvas: NSView {
     override var acceptsFirstResponder: Bool { true }
     init(image: CGImage, model: EditorModel) { state = CanvasState(image: image, marks: []); self.model = model; super.init(frame: .zero) }
     required init?(coder: NSCoder) { fatalError() }
-    var imageRect: CGRect {
-        let factor = min(bounds.width / CGFloat(state.image.width), bounds.height / CGFloat(state.image.height))
-        let size = CGSize(width: CGFloat(state.image.width) * factor, height: CGFloat(state.image.height) * factor)
-        return CGRect(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2, width: size.width, height: size.height)
+    var imageSize: CGSize { CGSize(width: state.image.width, height: state.image.height) }
+    var imageRect: CGRect { viewport.rect(image: imageSize, bounds: bounds.size) }
+    var backingScale: CGFloat { window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1 }
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        DispatchQueue.main.async { [weak self] in self?.updateZoomDisplay() }
     }
+    func updateZoomDisplay() {
+        let value = imageRect.width / max(1,imageSize.width) * backingScale * 100
+        let label = viewport.zoom == 1 && viewport.pan == .zero ? "Fit" : "\(Int(value.rounded()))%"
+        if model.zoomLabel != label { model.zoomLabel = label }
+        needsDisplay = true
+    }
+    func fitImage() { finishInlineEditing(commit: true); viewport = EditorViewport(); updateZoomDisplay() }
+    func actualPixels(multiplier: CGFloat = 1) {
+        finishInlineEditing(commit: true)
+        viewport.actualPixels(image: imageSize, bounds: bounds.size, backingScale: backingScale)
+        viewport.zoom = min(32, viewport.zoom * multiplier); constrainPan(); updateZoomDisplay()
+    }
+    func zoom(by factor: CGFloat, around anchor: CGPoint? = nil) {
+        finishInlineEditing(commit: true)
+        viewport.setZoom(viewport.zoom * factor, around: anchor ?? CGPoint(x: bounds.midX, y: bounds.midY), image: imageSize, bounds: bounds.size)
+        constrainPan(); updateZoomDisplay()
+    }
+    func constrainPan() {
+        let rect = imageRect
+        let xLimit = rect.width > bounds.width ? (rect.width - bounds.width) / 2 + 40 : 0
+        let yLimit = rect.height > bounds.height ? (rect.height - bounds.height) / 2 + 40 : 0
+        viewport.pan.x = min(xLimit,max(-xLimit,viewport.pan.x)); viewport.pan.y = min(yLimit,max(-yLimit,viewport.pan.y))
+    }
+    override func magnify(with event: NSEvent) { zoom(by: max(0.2, 1 + event.magnification), around: convert(event.locationInWindow, from: nil)) }
+    override func scrollWheel(with event: NSEvent) {
+        if event.modifierFlags.contains(.command) { zoom(by: exp(event.scrollingDeltaY * 0.01), around: convert(event.locationInWindow, from: nil)) }
+        else { finishInlineEditing(commit: true); viewport.pan.x += event.scrollingDeltaX; viewport.pan.y += event.scrollingDeltaY; constrainPan(); updateZoomDisplay() }
+    }
+    override func resetCursorRects() {
+        let cursor: NSCursor = spaceHeld ? .openHand : [.text,.extract].contains(model.tool) ? .iBeam : model.tool == .select ? .arrow : .crosshair
+        addCursorRect(bounds, cursor: cursor)
+    }
+    override func resignFirstResponder() -> Bool { spaceHeld = false; return super.resignFirstResponder() }
     func point(_ event: NSEvent) -> CGPoint {
         let p = convert(event.locationInWindow, from: nil), r = imageRect
         return CGPoint(x: min(CGFloat(state.image.width), max(0, (p.x - r.minX) * CGFloat(state.image.width) / max(1, r.width))), y: min(CGFloat(state.image.height), max(0, (p.y - r.minY) * CGFloat(state.image.height) / max(1, r.height))))
@@ -184,19 +247,23 @@ final class AnnotationCanvas: NSView {
         guard imageRect.width > 0 else { return }
         NSGraphicsContext.saveGraphicsState()
         let transform = NSAffineTransform(); transform.translateX(by: imageRect.minX, yBy: imageRect.minY); transform.scale(by: imageRect.width / CGFloat(state.image.width)); transform.concat()
-        drawImageAndMarks()
+        drawImageAndMarks(omitInline: true)
         if let pending { drawMark(pending) }
         NSColor.controlAccentColor.setStroke()
-        if let i = selectedIndex { let rect = markBounds(state.marks[i]).insetBy(dx: -5, dy: -5); let path = NSBezierPath(rect: rect); path.lineWidth = 2; path.stroke(); NSColor.controlAccentColor.setFill(); NSBezierPath(rect: CGRect(x: rect.maxX - 6, y: rect.maxY - 6, width: 12, height: 12)).fill() }
+        if inlineField == nil, let i = selectedIndex { let rect = markBounds(state.marks[i]).insetBy(dx: -5, dy: -5); let path = NSBezierPath(rect: rect); path.lineWidth = 2; path.stroke(); NSColor.controlAccentColor.setFill(); NSBezierPath(rect: CGRect(x: rect.maxX - 6, y: rect.maxY - 6, width: 12, height: 12)).fill() }
         if let crop = state.crop { NSColor.systemMint.setStroke(); NSBezierPath(rect: crop).stroke() }
         if model.tool == .extract { NSColor.controlAccentColor.withAlphaComponent(0.15).setFill(); regions.forEach { NSBezierPath(rect: $0.rect).fill() } }
         NSColor.systemOrange.withAlphaComponent(0.3).setFill(); model.suggestions.forEach { NSBezierPath(rect: $0.rect).fill() }
         NSGraphicsContext.restoreGraphicsState()
     }
-    func drawImageAndMarks() {
+    func drawImageAndMarks(omitInline: Bool = false) {
         let size = NSSize(width: state.image.width, height: state.image.height)
         NSImage(cgImage: state.image, size: size).draw(in: NSRect(origin: .zero, size: size), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-        state.marks.forEach(drawMark)
+        for mark in state.marks {
+            if omitInline, mark.id == inlineMark?.id {
+                if mark.tool == .pin { var pin = mark; pin.text = ""; drawMark(pin) }
+            } else { drawMark(mark) }
+        }
     }
     func drawMark(_ mark: Mark) {
         guard let p = mark.points.first, let q = mark.points.last else { return }
@@ -232,7 +299,11 @@ final class AnnotationCanvas: NSView {
         }
     }
     override func mouseDown(with event: NSEvent) {
+        finishInlineEditing(commit: true)
         window?.makeFirstResponder(self)
+        if spaceHeld {
+            panStart = convert(event.locationInWindow, from: nil); panOrigin = viewport.pan; return
+        }
         guard imageRect.contains(convert(event.locationInWindow, from: nil)) else { return }
         let p = point(event); start = p
         if model.tool == .select {
@@ -248,15 +319,15 @@ final class AnnotationCanvas: NSView {
         }
         let scale = CGFloat(state.image.width) / max(1, imageRect.width)
         let mark = Mark(tool: model.tool, points: [p, p], color: NSColor(model.color), width: CGFloat(model.width) * min(3, max(1, scale)))
-        if model.tool == .text {
-            let alert = NSAlert(); alert.messageText = "Add text"; alert.addButton(withTitle: "Add"); alert.addButton(withTitle: "Cancel")
-            let field = NSTextField(); field.frame = NSRect(x: 0, y: 0, width: 360, height: 28); field.placeholderString = "Type your annotation"; alert.accessoryView = field; alert.window.initialFirstResponder = field
-            if alert.runModal() == .alertFirstButtonReturn, !field.stringValue.isEmpty { checkpoint(); var text = mark; text.text = field.stringValue; state.marks.append(text); changed() }
-            start = nil; return
-        }
+        if model.tool == .text { beginInlineEditing(mark); start = nil; return }
         pending = mark; needsDisplay = true
     }
     override func mouseDragged(with event: NSEvent) {
+        if let panStart {
+            let point = convert(event.locationInWindow, from: nil)
+            viewport.pan = CGPoint(x: panOrigin.x + point.x - panStart.x, y: panOrigin.y + point.y - panStart.y)
+            constrainPan(); updateZoomDisplay(); return
+        }
         guard let start else { return }
         let end = endpoint(event)
         if model.tool == .select, let i = selectedIndex, let points = selectionStart {
@@ -279,6 +350,7 @@ final class AnnotationCanvas: NSView {
         if pending!.tool == .pen { pending!.points.append(end) } else { pending!.points[1] = end }; needsDisplay = true
     }
     override func mouseUp(with event: NSEvent) {
+        if panStart != nil { panStart = nil; return }
         defer { pending = nil; start = nil; selectionStart = nil; resizing = false; needsDisplay = true }
         guard var mark = pending, let start else { return }
         let end = endpoint(event)
@@ -290,9 +362,29 @@ final class AnnotationCanvas: NSView {
         } else { checkpoint(); state.marks.append(mark); changed() }
     }
     override func keyDown(with event: NSEvent) {
+        if event.keyCode == 49 { spaceHeld = true; window?.invalidateCursorRects(for: self); return }
+        if event.modifierFlags.intersection([.command,.control,.option]).isEmpty,
+           let tool = ["v":MarkTool.select,"a":.arrow,"r":.rectangle,"o":.ellipse,"p":.pen,"t":.text,"n":.pin,"h":.highlight,"b":.redact,"c":.crop,"x":.extract][event.charactersIgnoringModifiers ?? ""] {
+            model.tool = tool; model.status = tool.name; if tool == .extract { scanText() }; window?.invalidateCursorRects(for: self); needsDisplay = true; return
+        }
         if [51, 117].contains(event.keyCode), let i = selectedIndex { checkpoint(); state.marks.remove(at: i); model.selected = nil; changed(); return }
-        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "c", model.tool == .extract { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(model.recognizedText, forType: .string); model.status = "Text copied"; return }
+        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "c", model.tool == .extract { model.pasteboard.clearContents(); model.pasteboard.setString(model.recognizedText, forType: .string); model.status = "Text copied"; return }
         if event.keyCode == 53 { pending = nil; start = nil; needsDisplay = true } else { super.keyDown(with: event) }
+    }
+    override func keyUp(with event: NSEvent) {
+        if event.keyCode == 49 { spaceHeld = false; panStart = nil; window?.invalidateCursorRects(for: self) } else { super.keyUp(with: event) }
+    }
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard window?.firstResponder === self, event.modifierFlags.contains(.command) else { return super.performKeyEquivalent(with: event) }
+        switch event.charactersIgnoringModifiers {
+        case "0": fitImage()
+        case "1": actualPixels()
+        case "2": actualPixels(multiplier: 2)
+        case "+", "=": zoom(by: 1.25)
+        case "-": zoom(by: 1 / 1.25)
+        default: return super.performKeyEquivalent(with: event)
+        }
+        return true
     }
     func endpoint(_ event: NSEvent) -> CGPoint {
         guard let start else { return point(event) }
@@ -319,9 +411,45 @@ final class AnnotationCanvas: NSView {
     }
     func editLabel(_ i: Int) {
         guard [.text, .pin].contains(state.marks[i].tool) else { return }
-        let alert = NSAlert(); alert.messageText = state.marks[i].tool == .pin ? "Pin caption" : "Edit text"; alert.addButton(withTitle: "Save"); alert.addButton(withTitle: "Cancel")
-        let field = NSTextField(string: state.marks[i].text); field.frame = CGRect(x: 0, y: 0, width: 340, height: 28); alert.accessoryView = field; alert.window.initialFirstResponder = field
-        if alert.runModal() == .alertFirstButtonReturn { checkpoint(); state.marks[i].text = field.stringValue; changed() }
+        beginInlineEditing(state.marks[i])
+    }
+    func beginInlineEditing(_ mark: Mark) {
+        finishInlineEditing(commit: true)
+        guard let point = mark.points.first else { return }
+        inlineMark = mark
+        let scale = imageRect.width / imageSize.width
+        let offset: CGFloat = mark.tool == .pin ? max(18,mark.width * 3) + 8 : 0
+        let origin = CGPoint(x: imageRect.minX + (point.x + offset) * scale, y: imageRect.minY + point.y * scale)
+        let field = NSTextField(string: mark.text)
+        field.font = .systemFont(ofSize: max(13,min(36,mark.width * (mark.tool == .pin ? 4 : 5) * scale)), weight: .semibold)
+        field.isEditable = true; field.isSelectable = true; field.usesSingleLineMode = false; field.lineBreakMode = .byWordWrapping
+        field.placeholderString = mark.tool == .pin ? "Pin caption" : "Type text · Return to finish"
+        field.frame = CGRect(x: max(4,min(bounds.width - 244,origin.x)), y: max(4,min(bounds.height - 64,origin.y)), width: min(360,max(240,bounds.width - origin.x - 8)), height: 60)
+        field.delegate = self; inlineField = field; addSubview(field)
+        window?.makeFirstResponder(field); field.selectText(nil); needsDisplay = true
+    }
+    func controlTextDidEndEditing(_ obj: Notification) { finishInlineEditing(commit: true) }
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) { finishInlineEditing(commit: false); return true }
+        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            if NSEvent.modifierFlags.contains(.shift) { textView.insertNewlineIgnoringFieldEditor(nil) }
+            else { finishInlineEditing(commit: true) }; return true
+        }
+        return false
+    }
+    func finishInlineEditing(commit: Bool) {
+        guard !finishingInline, let field = inlineField, var mark = inlineMark else { return }
+        finishingInline = true
+        let text = (field.currentEditor() as? NSTextView)?.string ?? field.stringValue
+        inlineField = nil; inlineMark = nil; field.delegate = nil; window?.makeFirstResponder(self); field.removeFromSuperview()
+        defer { finishingInline = false; needsDisplay = true }
+        guard commit else { return }
+        mark.text = text
+        if let index = state.marks.firstIndex(where: { $0.id == mark.id }) {
+            guard state.marks[index].text != text else { return }; checkpoint()
+            if text.isEmpty && mark.tool == .text { state.marks.remove(at: index) } else { state.marks[index] = mark }
+            changed()
+        } else if !text.isEmpty { checkpoint(); state.marks.append(mark); changed() }
     }
     func restyleSelection() {
         guard let i = selectedIndex else { return }; checkpoint(); state.marks[i].color = NSColor(model.color); state.marks[i].width = CGFloat(model.width); changed()
@@ -366,7 +494,7 @@ final class AnnotationCanvas: NSView {
     func changed() { contentGeneration += 1; regions = []; model.recognizedText = ""; model.suggestions = []; model.dirty = true; model.canUndo = !past.isEmpty; model.canRedo = !future.isEmpty; needsDisplay = true }
     @objc func undo(_ sender: Any?) { guard let state = past.popLast() else { return }; future.append(self.state); self.state = state; changed() }
     @objc func redo(_ sender: Any?) { guard let state = future.popLast() else { return }; past.append(self.state); self.state = state; changed() }
-    func replace(_ image: CGImage) { checkpoint(); state = CanvasState(image: image, marks: []); changed() }
+    func replace(_ image: CGImage) { finishInlineEditing(commit: true); checkpoint(); viewport = EditorViewport(); state = CanvasState(image: image, marks: []); changed() }
     func render() throws -> CGImage {
         let width = state.image.width, height = state.image.height
         guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw Imaging.ImageError.invalid }

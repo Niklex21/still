@@ -10,9 +10,9 @@ struct LibraryView: View {
         HStack(spacing: 0) {
             if store.sidebarVisible {
                 List(selection: Binding<String?>(get: { store.filter }, set: { if let value = $0 { store.filter = value } })) {
-                    sidebarRow("All Screenshots", icon: "photo.on.rectangle", count: store.captures.count).tag("all")
+                    sidebarRow("All Screenshots", icon: "photo.on.rectangle", count: store.history.count).tag("all")
                     sidebarRow("Queue", icon: "tray", count: store.shelf.count).tag("shelf")
-                    sidebarRow("Favorites", icon: "star", count: store.captures.filter(\.favorite).count).tag("favorites")
+                    sidebarRow("Favorites", icon: "star", count: store.history.filter(\.favorite).count).tag("favorites")
                 }
                 .listStyle(.sidebar).frame(width: 190)
                 Divider()
@@ -29,7 +29,7 @@ struct LibraryView: View {
                     Menu { ForEach(savedProjects, id: \.id) { project in Button(project.title) { WalkthroughController.show(items: [], store: store, project: project) } } } label: { Image(systemName: "list.number") }.help("Saved walkthroughs")
                     if selecting {
                         Text("\(selected.count) selected").font(.caption).foregroundStyle(.secondary)
-                        Button("Create Walkthrough…") { WalkthroughController.show(items: store.captures.filter { selected.contains($0.id) }, store: store) }.disabled(selected.isEmpty || selected.count > 50)
+                        Button("Create Walkthrough…") { WalkthroughController.show(items: store.captures.filter { selected.contains($0.id) }, store: store) }.disabled(selected.isEmpty || selected.count > 50 || store.captures.contains { selected.contains($0.id) && $0.isPrivate })
                     }
                     Button(selecting ? "Done" : "Select") { selecting.toggle(); selected = [] }
                 }.buttonStyle(.borderless).padding(.horizontal, 22).frame(height: 40)
@@ -39,7 +39,7 @@ struct LibraryView: View {
                         Image(systemName: store.query.isEmpty ? "photo.on.rectangle.angled" : "magnifyingglass").font(.system(size: 36, weight: .light)).foregroundStyle(.tertiary)
                         Text(store.query.isEmpty ? "No screenshots yet" : "No results").font(.system(size: 16, weight: .semibold))
                         if store.query.isEmpty {
-                            Button("Capture Screenshot") { AppDelegate.shared.capture(.region) }.controlSize(.large)
+                            Button("Capture Screenshot") { AppDelegate.shared?.capture(.region) }.controlSize(.large)
                         }
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -60,7 +60,7 @@ struct LibraryView: View {
                         Text(store.visualIndexingID != nil ? "Analyzing images" : "Indexing text")
                     }
                     Spacer()
-                    Button { AppDelegate.shared.showShelf() } label: { Image(systemName: "tray") }.buttonStyle(.plain).help("Show shelf")
+                    Button { AppDelegate.shared?.showShelf() } label: { Image(systemName: "tray") }.buttonStyle(.plain).help("Show shelf")
                 }.font(.system(size: 11)).foregroundStyle(.secondary).padding(.horizontal, 18).frame(height: 30)
             }.background(Color(nsColor: .windowBackgroundColor))
         }

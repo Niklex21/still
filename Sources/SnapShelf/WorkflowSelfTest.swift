@@ -45,8 +45,11 @@ enum WorkflowSelfTest {
         try expect(try Data(contentsOf: store.disk.url(saved)) == beforeImage && store.captures[0].editDocument == beforeDocument, "Failed edit save restores rendered pixels and prior editable document")
         try expect(!FileManager.default.fileExists(atPath: store.disk.images.appendingPathComponent(failedBase).path), "Failed save cleans only its new immutable base")
         try FileManager.default.removeItem(at: store.disk.indexURL); try FileManager.default.moveItem(at: backup, to: store.disk.indexURL)
+        var redacted = image, ocrAvailable = false
+        do {
         let words = try Imaging.recognizeRegions(image), lines = try Imaging.recognizeRegions(image, words: false)
         try expect(words.contains { $0.text.contains("alex@example.com") }, "Real OCR recognizes selectable email")
+        try expect(try Imaging.recognizeAll(image, cpuOnly: true).text.contains("alex@example.com"), "CPU OCR fallback recognizes the same real email")
         let email = words.first { $0.text.contains("alex@example.com") }!
         try expect(email.rect.minY < 130 && email.rect.maxY > 60, "OCR boxes use top-left coordinates")
         try expect(words.contains { $0.text.lowercased() == "ready" && $0.rect.minY > 300 }, "OCR retains lower-line word positions")
@@ -54,16 +57,23 @@ enum WorkflowSelfTest {
         try expect(sensitive.count == 1, "Suggestions target sensitive line only")
         let model = EditorModel(), redaction = AnnotationCanvas(image: image, model: model); model.canvas = redaction
         redaction.applyRedactions(sensitive.map { var region = $0; region.rect = region.rect.insetBy(dx: -4, dy: -3); return region })
-        let redacted = try redaction.render(), text = try Imaging.recognize(redacted)
+        redacted = try redaction.render(); let text = try Imaging.recognize(redacted)
         try expect(!text.contains("example.com") && text.lowercased().contains("ready"), "Applied redaction removes sensitive OCR only")
         let pixel = NSBitmapImageRep(cgImage: redacted).colorAt(x: Int(email.rect.midX), y: Int(email.rect.midY))!.usingColorSpace(.sRGB)!
         try expect(pixel.redComponent < 0.01 && pixel.alphaComponent > 0.99, "Redaction exports opaque black pixels")
+        ocrAvailable = true
+        } catch let error as SelfTest.Failure { throw error }
+        catch let error as Imaging.ImageError { throw error }
+        catch {
+            guard ProcessInfo.processInfo.arguments.contains("--allow-unavailable-model") else { throw error }
+            print("SKIP real Vision OCR/redaction-retrieval checks: system backend unavailable after CPU retry: \(error)")
+        }
         for format in ExportFormat.allCases {
             var options = ExportOptions(); options.format = format; options.scale = 0.5
             let data = try options.encode(redacted), source = CGImageSourceCreateWithData(data as CFData, nil)!, decoded = CGImageSourceCreateImageAtIndex(source, 0, nil)!
             try expect(decoded.width == 400 && decoded.height == 250, "\(format.rawValue) export decodes at requested resolution")
             try expect(CGImageSourceGetType(source) as String? == format.type.identifier, "\(format.rawValue) encoded format is correct")
-            try expect(!(try Imaging.recognize(decoded)).contains("example.com"), "\(format.rawValue) does not leak redacted OCR")
+            if ocrAvailable { try expect(!(try Imaging.recognize(decoded)).contains("example.com"), "\(format.rawValue) does not leak redacted OCR") }
         }
         let second = try store.add(image, title: "Second step")
         let project = Walkthrough(steps: [WalkthroughStep(id: item.id, title: "First step", caption: "Start here"), WalkthroughStep(id: second.id, title: "Second step", caption: "Then finish")])
@@ -74,10 +84,17 @@ enum WorkflowSelfTest {
         let document = PDFDocument(data: try batch.pdf())
         try expect(document?.pageCount == 2, "PDF exports one step per page")
         try expect(document?.string?.contains("First step") == true && document?.string?.contains("Then finish") == true, "PDF includes readable titles and captions")
+        let longCaption = String(repeating: "Detailed instructions remain readable. ", count: 180) + "FINAL-CAPTION-MARKER"
+        batch.project.steps[0].caption = longCaption
+        let longPDF = PDFDocument(data: try batch.pdf())
+        try expect(longPDF?.string?.contains("FINAL-CAPTION-MARKER") == true && (longPDF?.page(at: 0)?.bounds(for: .mediaBox).height ?? 0) > 595, "Long walkthrough captions export in full instead of being clipped")
+        batch.project = project
         batch.saveProject()
         let url = root.appendingPathComponent("Walkthroughs/\(project.id).json")
         try expect(try JSONDecoder().decode(Walkthrough.self, from: Data(contentsOf: url)) == project, "Walkthrough ordering and captions persist")
-        let engine = SemanticSearch(); try expect(engine.available, "Apple sentence embedding model is available")
+        let engine = SemanticSearch()
+        if !engine.available && ProcessInfo.processInfo.arguments.contains("--allow-unavailable-model") { print("SKIP semantic synonym check: system sentence model unavailable"); return checks }
+        try expect(engine.available, "Apple sentence embedding model is available")
         var meaning = Capture(title: "Picture", width: 100, height: 100)
         meaning.visualIndex = VisualIndex(summary: "An automobile driving along a highway.", keywords: ["vehicle"], revision: 0)
         try expect(!meaning.matches("car on a road") && engine.rank([meaning], query: "car on a road").first?.id == meaning.id, "Local semantic search finds synonym-only match")

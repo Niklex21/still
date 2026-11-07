@@ -80,7 +80,7 @@ struct CaptureCard: View {
                 RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.035))
                 if let image = store.thumbnail(item) {
                     ScreenshotDragView(image: image, url: store.disk.url(item),
-                        onClick: { count in if count == 2 { AppDelegate.shared.edit(item) } },
+                        onClick: { count in if count == 2 { AppDelegate.shared?.edit(item) } },
                         onBegin: {
                             store.beginShelfDrag(item.id)
                             AppDelegate.shared?.updateHoverTarget(nil, source: "library:\(item.id)")
@@ -96,7 +96,7 @@ struct CaptureCard: View {
             .overlay { if store.copiedID == item.id { CopyConfirmation(message: store.feedbackMessage, detail: store.feedbackDetail).transition(.opacity) } }
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(item.title).font(.system(size: compact ? 11 : 12, weight: .medium)).lineLimit(1)
+                    Text(item.isPrivate ? "Private capture" : item.title).font(.system(size: compact ? 11 : 12, weight: .medium)).lineLimit(1)
                     Text("\(item.width) × \(item.height)  ·  \(item.createdAt.formatted(date: .omitted, time: .shortened))")
                         .font(.system(size: 10)).foregroundStyle(.secondary)
                 }
@@ -111,18 +111,19 @@ struct CaptureCard: View {
             AppDelegate.shared?.updateHoverTarget(inside ? item.id : nil, source: "library:\(item.id)")
         }
         .onDisappear { AppDelegate.shared?.updateHoverTarget(nil, source: "library:\(item.id)") }
-        .onTapGesture(count: 2) { AppDelegate.shared.edit(item) }
+        .onTapGesture(count: 2) { AppDelegate.shared?.edit(item) }
         .contextMenu {
-            Button("Annotate…") { AppDelegate.shared.edit(item) }
+            Button("Annotate…") { AppDelegate.shared?.edit(item) }
             Button(item.isPinned ? "Unpin from Screen" : "Pin to Screen") { store.togglePin(item.id) }
             Button("Copy Image") { store.copy(item) }
+            Button("Copy for Sharing") { store.copyForSharing(item) }
             Button(actionLabel(.upload, item: item)) { store.prepareUpload(item) }
-            Button("Select Text…") { AppDelegate.shared.selectText(item) }
+            Button("Select Text…") { AppDelegate.shared?.selectText(item) }
             Button("Copy Recognized Text") { store.copyText(item) }.disabled(item.text.isEmpty)
-            Button(actionLabel(.description, item: item)) { AppDelegate.shared.showDescription(item.id) }
-            Button(item.onShelf ? "Remove from Shelf" : "Add to Shelf") { store.update(item.id) { $0.onShelf.toggle() }; if !item.onShelf { AppDelegate.shared.showShelf() } }
+            Button(actionLabel(.description, item: item)) { AppDelegate.shared?.showDescription(item.id) }
+            Button(item.onShelf ? "Remove from Shelf" : "Add to Shelf") { store.update(item.id) { $0.onShelf.toggle() }; if !item.onShelf { AppDelegate.shared?.showShelf() } }
             Button(item.favorite ? "Unfavorite" : "Favorite") { store.update(item.id) { $0.favorite.toggle() } }
-            Button("Rename…") { AppDelegate.shared.rename(item) }
+            Button("Rename…") { AppDelegate.shared?.rename(item) }
             Button("Export / Resize…") { store.export(item) }
             Button("Show in Finder") { store.showInFinder(item) }
             Divider()
@@ -199,21 +200,21 @@ struct ShelfView: View {
                     ZStack {
                         HStack(spacing: 10) {
                             Image(systemName: "line.3.horizontal").foregroundStyle(.secondary).frame(width: 28)
-                            Text("\(store.shelf.count)").font(.caption.weight(.medium)).monospacedDigit().foregroundStyle(.secondary)
+                            Text(interaction.manuallyOpened ? "History" : "\(store.pendingCount)").font(.caption.weight(.medium)).monospacedDigit().foregroundStyle(.secondary)
                             Spacer(minLength: 0)
                         }.allowsHitTesting(false)
                         ShelfMoveHandle()
                     }.frame(maxWidth: .infinity).frame(height: 30).help("Drag to move")
-                    Button { AppDelegate.shared.showLibrary() } label: { Image(systemName: "magnifyingglass") }.help("Search library")
+                    Button { AppDelegate.shared?.showLibrary() } label: { Image(systemName: "magnifyingglass") }.help("Search library")
                     Menu {
-                        Button("Capture Region") { AppDelegate.shared.capture(.region) }
+                        Button("Capture Region") { AppDelegate.shared?.capture(.region) }
                         Button("Import Images…") { store.chooseImages() }
                         Button("Paste Image") { store.paste() }
                         Button("Mark All as Viewed") { store.markReviewed(Set(store.shelf.map(\.id))) }
-                        Button("Clear Shelf") { for item in store.shelf where !item.favorite { store.update(item.id) { $0.onShelf = false } } }
-                        Button("Settings…") { AppDelegate.shared.showSettings() }
+                        Button("Dismiss All Previews") { store.dismissCurrentPreviews(); AppDelegate.shared?.hideShelf() }
+                        Button("Settings…") { AppDelegate.shared?.showSettings() }
                     } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).frame(width: 24)
-                    Button { AppDelegate.shared.dismissShelf() } label: { Image(systemName: "xmark") }.help("Close current previews; keep in History").accessibilityLabel("Close shelf")
+                    Button { AppDelegate.shared?.dismissShelf() } label: { Image(systemName: "xmark") }.help("Dismiss all queued previews; keep in History").accessibilityLabel("Close shelf")
                 }.buttonStyle(.plain).padding(.horizontal, 10).frame(height: 38).transition(.opacity)
             }
             if store.captures.isEmpty || (!interaction.expanded && store.shelf.isEmpty) {
@@ -222,7 +223,7 @@ struct ShelfView: View {
                 GeometryReader { viewport in
                     ScrollView(.horizontal) {
                         HStack(spacing: 8) {
-                            ForEach(store.captures) { item in
+                            ForEach(interaction.manuallyOpened ? store.history : store.shelf) { item in
                                 ShelfThumbnail(store: store, item: item, expanded: true, interaction: interaction).frame(width: 150, height: 108)
                                     .background(GeometryReader { geometry in
                                         Color.clear.preference(key: ShelfCardFrames.self, value: [item.id: geometry.frame(in: .named("Still.ShelfViewport"))])
@@ -246,7 +247,7 @@ struct ShelfView: View {
         .modifier(ShelfGlass(expanded: interaction.expanded))
         .overlay(alignment: .trailing) {
             if !interaction.expanded && !store.captures.isEmpty {
-                Button { interaction.setExpanded(true) } label: {
+                Button { AppDelegate.shared?.showShelf(manuallyOpened: true) } label: {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.secondary)
@@ -260,7 +261,6 @@ struct ShelfView: View {
                     .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: interaction.pointerIsInside)
                     .help("Expand screenshot history")
                     .accessibilityLabel("Expand screenshot history")
-                    .onHover { interaction.stackHovered($0, delay: 0.28) }
             }
         }
         .overlay(alignment: .bottom) {
@@ -268,10 +268,11 @@ struct ShelfView: View {
         }
         .background(ShelfHoverArea(onHover: { _ in }, onScroll: { interaction.scrolled() }))
         .onChange(of: store.compactShelf.columnCount) { _, _ in
-            if !interaction.expanded { AppDelegate.shared.expandShelf(false) }
+            if !interaction.expanded { AppDelegate.shared?.expandShelf(false) }
         }
-        .onChange(of: store.shelf.count) { _, _ in AppDelegate.shared.hideShelfIfReviewed() }
-        .onChange(of: store.copiedID) { _, id in if id == nil { AppDelegate.shared.hideShelfIfReviewed() } }
+        .onChange(of: store.shelf.count) { _, _ in AppDelegate.shared?.hideShelfIfReviewed(afterAction: true) }
+        .onChange(of: store.pendingCount) { _, _ in AppDelegate.shared?.hideShelfIfReviewed() }
+        .onChange(of: store.copiedID) { _, id in if id == nil { AppDelegate.shared?.hideShelfIfReviewed(afterAction: true) } }
         .onDrop(of: [.fileURL], isTargeted: nil) { importDrop($0, store: store) }
     }
     private func updateVisibleItems(_ frames: [UUID: CGRect], size: CGSize) {
@@ -354,7 +355,7 @@ struct ShelfThumbnail: View {
             RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(expanded ? 0.035 : 0))
             if let image = store.thumbnail(item) {
                 ScreenshotDragView(image: image, url: store.disk.url(item), fill: !expanded, moveWindowOnDrag: pinned,
-                    onClick: { count in if count == 2 { AppDelegate.shared.edit(item) } },
+                    onClick: { count in if count == 2 { AppDelegate.shared?.edit(item) } },
                     onBegin: { store.beginShelfDrag(item.id); interaction.beginDragging() }, onEnd: { success in
                         store.finishShelfDrag(item.id, succeeded: success)
                         interaction.endDragging()
@@ -370,7 +371,7 @@ struct ShelfThumbnail: View {
                     Spacer()
                 }
             }.padding(6).opacity(hover && preferences.controls.hideDate ? 0 : 1).allowsHitTesting(false)
-            ScreenshotActionOverlay(store: store, item: item, hover: hover, interaction: interaction, pinned: pinned, inHistory: expanded && !pinned)
+            ScreenshotActionOverlay(store: store, item: item, hover: hover, interaction: interaction, pinned: pinned, inHistory: interaction.manuallyOpened && !pinned)
         }
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hover)
@@ -378,12 +379,12 @@ struct ShelfThumbnail: View {
         .onDisappear { interaction.pointer(over: item.id, inside: false) }
         .contextMenu {
             ForEach(ScreenshotAction.allCases.filter { $0 != .none && $0 != .history }) { action in
-                Button(actionLabel(action, item: item, inHistory: expanded && !pinned), role: action == .dismiss && expanded && !pinned ? .destructive : nil) {
-                    AppDelegate.shared.performScreenshotAction(action, item: item, interaction: interaction, pinned: pinned, inHistory: expanded && !pinned)
+                Button(actionLabel(action, item: item, inHistory: interaction.manuallyOpened && !pinned), role: action == .dismiss && interaction.manuallyOpened && !pinned ? .destructive : nil) {
+                    AppDelegate.shared?.performScreenshotAction(action, item: item, interaction: interaction, pinned: pinned, inHistory: interaction.manuallyOpened && !pinned)
                 }
                     .disabled(action == .copyText && item.text.isEmpty)
             }
-            Button("History") { AppDelegate.shared.showShelf() }
+            Button("History") { AppDelegate.shared?.showShelf() }
         }
         .accessibilityElement(children: .contain).accessibilityLabel("\(item.title), \(timestamp)")
     }

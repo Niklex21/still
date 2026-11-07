@@ -1,0 +1,23 @@
+name: Bug report
+description: Report a reproducible Still issue using non-sensitive data.
+body:
+  - type: markdown
+    attributes:
+      value: 'Please use a synthetic screenshot. Do not upload your library, private captures, passwords, or personal information. Security vulnerabilities belong in private reporting (see SECURITY.md).'
+  - type: input
+    id: version
+    attributes:
+      label: Still version and macOS version
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include expected and actual behavior, relevant settings, and whether you installed a DMG or built from source.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Synthetic example or error message
