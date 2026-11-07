@@ -307,6 +307,7 @@ enum SelfTest {
         try expect(queue.captures.first(where: { $0.id == failedExport.id })!.onShelf, "A failed save cannot consume a waiting screenshot")
         checks += try WorkflowSelfTest.run()
         checks += try ReleaseReadinessSelfTest.run()
+        checks += try ScrollingSelfTest.run()
         print("SELF-TEST PASSED: \(checks) checks")
     }
 }

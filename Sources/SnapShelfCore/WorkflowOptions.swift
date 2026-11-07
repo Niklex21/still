@@ -41,6 +41,12 @@ public enum CaptureRegion {
         // An individual region must fit a connected display; don't silently capture an absent display or a gap.
         return screens.contains { $0.insetBy(dx: -0.5, dy: -0.5).contains(rect) }
     }
+    /// Crop the frozen selection using AppKit's bottom-left local coordinates.
+    public static func frozenCrop(_ local: CGRect, screen: CGSize, pixels: CGSize) -> CGRect {
+        guard screen.width > 0, screen.height > 0 else { return .zero }
+        let x = pixels.width / screen.width, y = pixels.height / screen.height
+        return CGRect(x: local.minX*x,y: (screen.height-local.maxY)*y,width: local.width*x,height: local.height*y).integral.intersection(CGRect(origin: .zero,size: pixels))
+    }
     public static func arguments(_ rect: CGRect) -> String {
         "-R\(Int(rect.minX.rounded())),\(Int(rect.minY.rounded())),\(Int(rect.width.rounded())),\(Int(rect.height.rounded()))"
     }

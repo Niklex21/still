@@ -62,6 +62,14 @@ public enum Imaging {
         return data as Data
     }
 
+    public static func thumbnail(_ image: CGImage, maxPixelSize: Int = 700) throws -> CGImage {
+        let factor = min(1,CGFloat(maxPixelSize)/CGFloat(max(image.width,image.height)))
+        let w = max(1,Int(CGFloat(image.width)*factor)), h = max(1,Int(CGFloat(image.height)*factor))
+        guard let context = CGContext(data: nil,width: w,height: h,bitsPerComponent: 8,bytesPerRow: 0,space: CGColorSpace(name: CGColorSpace.sRGB)!,bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw ImageError.invalid }
+        context.interpolationQuality = .high; context.draw(image,in: CGRect(x: 0,y: 0,width: w,height: h))
+        guard let result = context.makeImage() else { throw ImageError.invalid }; return result
+    }
+
     public static func recognize(_ image: CGImage) throws -> String { try recognizeAll(image).text }
     public static func recognizeRegions(_ image: CGImage, words: Bool = true) throws -> [TextRegion] {
         let result = try recognizeAll(image); return words ? result.words : result.lines
@@ -158,7 +166,7 @@ public final class ScrollStitcher {
         }
         guard best.error < 9.0 else { throw Imaging.ImageError.noOverlap }
         let shift = best.shift
-        guard result.height + shift <= 30_000 else { throw Imaging.ImageError.tooLarge }
+        guard result.height + shift <= 30_000, Int64(result.width) * Int64(result.height + shift) <= 150_000_000 else { throw Imaging.ImageError.tooLarge }
         // Replace the previous frame's bottom margin so fixed footers don't repeat.
         let seam = result.height - margin
         let newHeight = result.height + shift

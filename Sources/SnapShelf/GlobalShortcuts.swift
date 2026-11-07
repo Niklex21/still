@@ -19,14 +19,16 @@ final class GlobalShortcutManager: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         if let data = defaults.data(forKey: Self.settingsKey), var saved = try? JSONDecoder().decode(ShortcutBindings.self, from: data) {
+            let previous = saved
             if (saved.version ?? 1) < 4 {
                 if (saved.version ?? 1) < 3 {
                     if (saved.version ?? 1) < 2 { saved.addHoverDefaults() }
                     else { saved.addUploadDefault() }
                 }
                 saved.addDescriptionDefault()
-                if let migrated = try? JSONEncoder().encode(saved) { defaults.set(migrated, forKey: Self.settingsKey) }
             }
+            if (saved.version ?? 1) < 5 { saved.addSharingCopyDefault() }
+            if saved != previous, let migrated = try? JSONEncoder().encode(saved) { defaults.set(migrated, forKey: Self.settingsKey) }
             bindings = saved
         } else { bindings = .defaults(legacyPreset: defaults.string(forKey: "hotkeyPreset") ?? "optionShift") }
     }

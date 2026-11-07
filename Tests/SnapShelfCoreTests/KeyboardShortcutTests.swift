@@ -31,13 +31,13 @@ final class KeyboardShortcutTests: XCTestCase {
         let region = old[.region]
         old.addHoverDefaults()
         XCTAssertEqual(old[.region], region)
-        XCTAssertEqual(old[.copyHovered], KeyboardShortcut(keyCode: 8, modifiers: UInt32(cmdKey)))
+        XCTAssertEqual(old[.copyHovered], KeyboardShortcut(keyCode: 8, modifiers: UInt32(cmdKey | optionKey)))
         XCTAssertEqual(old[.pinHovered], KeyboardShortcut(keyCode: 35, modifiers: UInt32(cmdKey)))
         XCTAssertTrue(ShortcutAction.pinHovered.isHoverAction)
         XCTAssertFalse(ShortcutAction.shelf.isHoverAction)
         old[.copyHovered] = nil
         let saved = try JSONDecoder().decode(ShortcutBindings.self, from: JSONEncoder().encode(old))
-        XCTAssertEqual(saved.version, 4)
+        XCTAssertEqual(saved.version, 5)
         XCTAssertNil(saved[.copyHovered])
         XCTAssertEqual(ShortcutAction.library.eventID, 6)
     }
