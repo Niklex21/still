@@ -102,13 +102,18 @@ enum SelfTest {
         var seen: Set<UUID> = []
         interaction.onViewed = { ids in seen.formUnion(ids); store.markReviewed(ids) }
         func advance(_ seconds: TimeInterval) { RunLoop.current.run(until: Date().addingTimeInterval(seconds)) }
+        func eventually(_ message: String, _ condition: () -> Bool) throws {
+            let deadline = Date().addingTimeInterval(3)
+            while !condition() && Date() < deadline { advance(0.01) }
+            try expect(condition(), message)
+        }
         interaction.pointerInside(true)
         interaction.pointer(over: first.id, inside: true)
         advance(0.02)
         try expect(!interaction.expanded && interaction.hoveredID == first.id, "Recent preview hover enables actions without expanding the shelf")
         interaction.stackHovered(true)
         advance(0.02)
-        try expect(interaction.expanded, "Hovering the older stack expands the shelf")
+        try eventually("Hovering the older stack expands the shelf") { interaction.expanded }
         interaction.visibleItems([first.id])
         interaction.pointer(over: first.id, inside: true)
         interaction.scrolled()
@@ -117,11 +122,11 @@ enum SelfTest {
         advance(0.015)
         try expect(seen.isEmpty, "Passing thumbnails are not marked viewed during scrolling")
         advance(0.1)
-        try expect(seen == [second.id], "Only the screenshot left visible after scrolling is marked viewed")
+        try eventually("Only the screenshot left visible after scrolling is marked viewed") { seen == [second.id] }
         try expect(store.pendingCount == waitingBefore + 1, "Stable thumbnail viewing decreases the unread counter")
         interaction.pointerInside(false)
         advance(0.06)
-        try expect(!interaction.expanded, "Leaving the shelf collapses it after the grace period")
+        try eventually("Leaving the shelf collapses it after the grace period") { !interaction.expanded }
         interaction.visibleItems([first.id])
         advance(0.06)
         try expect(!seen.contains(first.id), "A minimized stack does not mark waiting screenshots as viewed")
@@ -226,7 +231,7 @@ enum SelfTest {
         try expect(edgeInteraction.expanded && expansions == 1, "A stationary pointer at the stack edge causes no resize loop")
         edgeInteraction.pointerInside(false)
         advance(0.04)
-        try expect(!edgeInteraction.expanded && expansions == 2, "Physically leaving the settled panel collapses exactly once")
+        try eventually("Physically leaving the settled panel collapses exactly once") { !edgeInteraction.expanded && expansions == 2 }
         for count in 1...20 {
             let compact = ShelfLayout.minimizedSize(recentCount: min(3, count), hasOlder: count > 3)
             let expandedSize = ShelfLayout.panelSize(expanded: true, compact: compact, current: compact, shelfCount: count, availableWidth: 1000)

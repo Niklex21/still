@@ -179,10 +179,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
     @objc func closeWindowsAction() {
         dismissShelf()
         libraryWindow?.orderOut(nil); settingsWindow?.orderOut(nil)
-        editors.values.forEach { $0.window?.orderOut(nil) }
+        Array(editors.values).forEach { $0.window?.performClose(nil) }
         descriptionWindows.values.forEach { $0.window?.orderOut(nil) }
-        ExportController.windows.forEach { $0.window?.orderOut(nil) }
-        WalkthroughController.windows.forEach { $0.window?.orderOut(nil) }
+        Array(ExportController.windows).forEach { $0.window?.performClose(nil) }
+        Array(WalkthroughController.windows).forEach { $0.window?.performClose(nil) }
     }
     @objc func shelfAction() { showShelf() }
     @objc func libraryAction() { showLibrary() }
