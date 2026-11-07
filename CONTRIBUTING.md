@@ -22,9 +22,9 @@ The source map and persistence boundaries are described in [docs/architecture.md
 
 ## Validation
 
-For core/model/image changes, run the Swift tests documented in the README. For native capture, editor, shelf, clipboard, or window behavior, also run `--self-test` in a logged-in macOS desktop session and exercise the affected UI. Integration tests temporarily register isolated hotkeys and restore the clipboard.
+For core/model/image changes, run the Swift tests documented in the README. For native capture, editor, shelf, clipboard, or window behavior, also run `--self-test` in a logged-in macOS desktop session and exercise the affected UI. Integration tests temporarily register isolated test hotkeys and use a separate named clipboard. Views are rendered offscreen with synthetic data. `./scripts/check.sh` runs the complete automated checks; snapshots appear in `.build/qa-snapshots`.
 
-Run `--visual-search-self-test` for indexing lifecycle changes. Use `--visual-model-test` only when a real compatible system model is ready, and state whether a model check ran, skipped, or was unavailable. A passing controlled-analyzer test is not proof that Apple's model responded successfully.
+Run `--visual-search-self-test` for indexing lifecycle changes. Run `--visual-model-test` from the built `dist/Still.app/Contents/MacOS/Still` bundle (it uses its bundled icon fixture). Use it only when a real compatible system model is ready, and state whether a model check ran, skipped, or was unavailable. A passing controlled-analyzer test is not proof that Apple's model responded successfully.
 
 For Raycast changes, run `npm run typecheck`, `npm test`, and `npm run build` from `Raycast/`.
 

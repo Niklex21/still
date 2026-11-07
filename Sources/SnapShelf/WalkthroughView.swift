@@ -7,6 +7,14 @@ final class WalkthroughModel: ObservableObject {
     @Published var project: Walkthrough
     @Published var mode = "walkthrough"
     @Published var comparison = 0.5
+    @Published var difference: ImageDifference?
+    @Published var differenceMode = false
+    @Published var alignComparison = true
+    @Published var tolerance = 24.0
+    @Published var ignoredRegions: [CGRect] = []
+    @Published var ignoringRegion = false
+    @Published var comparing = false
+    private var comparisonGeneration = 0
     @Published var status = ""
     @Published var preview: NSImage?
     @Published var dirty = false
@@ -51,13 +59,40 @@ final class WalkthroughModel: ObservableObject {
         }
         guard let output = ctx.makeImage() else { throw Imaging.ImageError.invalid }; return output
     }
+    func refreshDifference() {
+        comparisonGeneration += 1
+        let generation = comparisonGeneration
+        guard project.steps.count == 2 else { difference = nil; return }
+        let urls = project.steps.compactMap { step in store.captures.first { $0.id == step.id }.map { store.disk.url($0) } }
+        guard urls.count == 2 else { difference = nil; status = "A source screenshot is missing"; return }
+        var options = DifferenceOptions(); options.align = alignComparison; options.tolerance = UInt8(tolerance); options.ignored = ignoredRegions
+        comparing = true
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = Result { try ImageDifference.compare(Imaging.load(urls[0]), Imaging.load(urls[1]), options: options) }
+            DispatchQueue.main.async {
+                guard let self, self.comparisonGeneration == generation else { return }
+                self.comparing = false
+                switch result {
+                case .success(let value): self.difference = value; self.status = ""
+                case .failure(let error): self.difference = nil; self.status = error.localizedDescription
+                }
+            }
+        }
+    }
+    func exportDifference() {
+        guard let difference else { return }
+        let panel = NSSavePanel(); panel.allowedContentTypes = [.png]; panel.nameFieldStringValue = "Difference.png"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try Imaging.png(difference.overlay).write(to: url, options: .atomic); status = "Difference exported" } catch { status = error.localizedDescription }
+    }
     func refreshPreview() {
-        if mode == "compare" { return }
+        if mode == "compare" { refreshDifference(); return }
         // Thumbnail input avoids allocating full-resolution batches during typing.
         do { let image = try composite(width: 300); preview = NSImage(cgImage: image, size: .zero); status = "" } catch { preview = nil; status = error.localizedDescription }
     }
     @discardableResult func saveProject() -> Bool {
         do {
+            guard !items.contains(where: \.isPrivate) else { status = "Private screenshots cannot be saved in a walkthrough"; return false }
             let folder = store.disk.root.appendingPathComponent("Walkthroughs", isDirectory: true); try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try JSONEncoder().encode(project).write(to: folder.appendingPathComponent("\(project.id).json"), options: .atomic)
             status = "Walkthrough saved"; dirty = false; store.objectWillChange.send(); return true
@@ -128,7 +163,7 @@ struct WalkthroughView: View {
                 TextField("Title", text: $model.project.title).textFieldStyle(.plain).font(.headline)
                 Picker("Layout", selection: $model.mode) { Text("Walkthrough").tag("walkthrough"); Text("Vertical").tag("vertical"); Text("Side by Side").tag("horizontal"); if model.project.steps.count == 2 { Text("Compare").tag("compare") } }.labelsHidden().frame(width: 160)
                 Button("Save") { model.saveProject() }.keyboardShortcut("s", modifiers: .command)
-                Menu("Export") { Button("PNG…") { model.export("png") }.disabled(model.mode == "compare"); Button("PDF · One Step per Page…") { model.export("pdf") }; Button("Markdown + Images…") { model.export("markdown") } }.fixedSize()
+                Menu("Export") { Button(model.mode == "compare" ? "Difference PNG…" : "PNG…") { if model.mode == "compare" { model.exportDifference() } else { model.export("png") } }; Button("PDF · One Step per Page…") { model.export("pdf") }; Button("Markdown + Images…") { model.export("markdown") } }.fixedSize()
             }.padding(16).background(.bar)
             Divider()
             HStack(spacing: 0) {
@@ -147,18 +182,7 @@ struct WalkthroughView: View {
                 }.frame(width: 310)
                 Divider()
                 if model.mode == "compare", model.items.count == 2 {
-                    VStack {
-                        GeometryReader { geometry in
-                            let first = model.store.thumbnail(model.items[0]), second = model.store.thumbnail(model.items[1])
-                            ZStack(alignment: .leading) {
-                                if let first { Image(nsImage: first).resizable().scaledToFit().frame(width: geometry.size.width, height: geometry.size.height) }
-                                if let second { Image(nsImage: second).resizable().scaledToFit().frame(width: geometry.size.width, height: geometry.size.height).mask(alignment: .leading) { Rectangle().frame(width: geometry.size.width * model.comparison) } }
-                                Rectangle().fill(.white).frame(width: 2).offset(x: geometry.size.width * model.comparison)
-                            }
-                        }
-                        Slider(value: $model.comparison, in: 0...1).help("Reveal before / after")
-                        HStack { Text(model.items[0].title); Spacer(); Text(model.items[1].title) }.font(.caption).foregroundStyle(.secondary)
-                    }.padding(24)
+                    ComparisonView(model: model)
                 } else {
                     ScrollView([.vertical, .horizontal]) { if let preview = model.preview { Image(nsImage: preview).resizable().scaledToFit().frame(width: min(1100, preview.size.width)) } }.padding(20).frame(maxWidth: .infinity, maxHeight: .infinity).background(Color(nsColor: .underPageBackgroundColor))
                 }

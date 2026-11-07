@@ -1,7 +1,7 @@
 import Foundation
 
 public enum ScreenshotAction: String, Codable, CaseIterable, Identifiable {
-    case none, dismiss, pin, edit, copy, save, upload, copyText, reveal, history, description
+    case none, dismiss, pin, edit, copy, save, upload, copyText, reveal, history, description, copySharing
     public var id: String { rawValue }
     public var title: String {
         switch self {
@@ -9,6 +9,7 @@ public enum ScreenshotAction: String, Codable, CaseIterable, Identifiable {
         case .dismiss: return "Remove from Queue"
         case .pin: return "Pin to Screen"
         case .edit: return "Annotate"
+        case .copySharing: return "Copy for Sharing"
         case .copy: return "Copy Image"
         case .save: return "Export / Resize…"
         case .upload: return "Prepare for Upload"
@@ -24,6 +25,7 @@ public enum ScreenshotAction: String, Codable, CaseIterable, Identifiable {
         case .dismiss: return "xmark"
         case .pin: return "pin"
         case .edit: return "pencil"
+        case .copySharing: return "square.and.arrow.up"
         case .copy: return "doc.on.doc"
         case .save: return "square.and.arrow.down"
         case .upload: return "arrow.up.doc"
@@ -38,6 +40,7 @@ public enum ScreenshotAction: String, Codable, CaseIterable, Identifiable {
         case .dismiss: return .removeHovered
         case .pin: return .pinHovered
         case .edit: return .editHovered
+        case .copySharing: return .copySharingHovered
         case .copy: return .copyHovered
         case .save: return .exportHovered
         case .upload: return .uploadHovered

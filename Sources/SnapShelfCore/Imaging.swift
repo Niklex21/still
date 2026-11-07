@@ -57,26 +57,28 @@ public enum Imaging {
         return data as Data
     }
 
-    public static func recognize(_ image: CGImage) throws -> String {
-        try recognizeRegions(image, words: false).map(\.text).joined(separator: "\n")
-    }
+    public static func recognize(_ image: CGImage) throws -> String { try recognizeAll(image).text }
     public static func recognizeRegions(_ image: CGImage, words: Bool = true) throws -> [TextRegion] {
+        let result = try recognizeAll(image); return words ? result.words : result.lines
+    }
+    /// One Vision request supplies both searchable text and precise selectable words.
+    public static func recognizeAll(_ image: CGImage) throws -> (text: String, words: [TextRegion], lines: [TextRegion]) {
         let request = VNRecognizeTextRequest(); request.recognitionLevel = .accurate; request.usesLanguageCorrection = true
         try VNImageRequestHandler(cgImage: image).perform([request])
         func pixels(_ r: CGRect) -> CGRect { CGRect(x: r.minX * CGFloat(image.width), y: (1 - r.maxY) * CGFloat(image.height), width: r.width * CGFloat(image.width), height: r.height * CGFloat(image.height)) }
-        var regions: [TextRegion] = []
+        var words: [TextRegion] = [], lines: [TextRegion] = []
         let regex = try NSRegularExpression(pattern: #"\S+"#)
         for observation in request.results ?? [] {
             guard let candidate = observation.topCandidates(1).first else { continue }
-            if !words { regions.append(TextRegion(text: candidate.string, rect: pixels(observation.boundingBox))); continue }
             let text = candidate.string
+            lines.append(TextRegion(text: text, rect: pixels(observation.boundingBox)))
             for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
                 guard let range = Range(match.range, in: text) else { continue }
                 let rect = (try? candidate.boundingBox(for: range))?.boundingBox ?? observation.boundingBox
-                regions.append(TextRegion(text: String(text[range]), rect: pixels(rect)))
+                words.append(TextRegion(text: String(text[range]), rect: pixels(rect)))
             }
         }
-        return regions
+        return (lines.map(\.text).joined(separator: "\n"), words, lines)
     }
 
     public enum ImageError: LocalizedError {

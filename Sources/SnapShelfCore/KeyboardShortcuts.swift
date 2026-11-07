@@ -4,9 +4,14 @@ import Carbon
 public enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     case region, window, screen, scrolling, shelf, library
     case copyHovered, editHovered, pinHovered, exportHovered, reviewHovered, removeHovered, textHovered, revealHovered, uploadHovered, descriptionHovered
+    case repeatRegion, delayedRegion, privateRegion, copySharingHovered
     public var id: String { rawValue }
     public var title: String {
         switch self {
+        case .repeatRegion: return "Repeat Last Region"
+        case .delayedRegion: return "Delayed Region Capture"
+        case .privateRegion: return "Private Region Capture"
+        case .copySharingHovered: return "Copy for Sharing"
         case .region: return "Capture Region"
         case .window: return "Capture Window"
         case .screen: return "Capture Full Screen"
@@ -26,7 +31,7 @@ public enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         }
     }
     public var eventID: UInt32 { UInt32(Self.allCases.firstIndex(of: self)! + 1) }
-    public var isHoverAction: Bool { eventID > 6 }
+    public var isHoverAction: Bool { eventID > 6 && ![.repeatRegion, .delayedRegion, .privateRegion].contains(self) }
 }
 
 public struct KeyboardShortcut: Codable, Equatable {

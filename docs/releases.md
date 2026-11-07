@@ -7,14 +7,14 @@ The DMG contains one self-contained `Still.app` and an Applications shortcut. Us
 On a Mac with the Xcode 27 SDK:
 
 ```sh
-STILL_RELEASE_LABEL=1.0.0-preview.1 ./scripts/package-dmg.sh
+STILL_RELEASE_LABEL=1.1.0-preview.1 ./scripts/package-dmg.sh
 ```
 
 This builds both **arm64 and x86_64** slices and produces:
 
 ```text
-dist/Still-1.0.0-preview.1-universal.dmg
-dist/Still-1.0.0-preview.1-universal.dmg.sha256
+dist/Still-1.1.0-preview.1-universal.dmg
+dist/Still-1.1.0-preview.1-universal.dmg.sha256
 ```
 
 An eligible Apple Silicon Mac is still required for Apple Intelligence image descriptions. The native screenshot/OCR/editor features have their separate OS requirements listed in the README. Universal packaging does not make the optional vision model available on Intel.
@@ -32,7 +32,7 @@ After configuring a notarytool keychain profile on the build machine, run:
 ```sh
 STILL_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 STILL_NOTARY_PROFILE="your-notary-profile" \
-STILL_RELEASE_LABEL=1.0.0 \
+STILL_RELEASE_LABEL=1.1.0 \
 ./scripts/package-dmg.sh
 ```
 
@@ -57,13 +57,19 @@ The Intel slice can be cross-compiled on Apple Silicon, but building it is not p
 Commit the release tooling and documentation first, and attach the DMG and checksum to a release at that commit. For example, using GitHub CLI:
 
 ```sh
-gh release create v1.0.0-preview.1 \
-  dist/Still-1.0.0-preview.1-universal.dmg \
-  dist/Still-1.0.0-preview.1-universal.dmg.sha256 \
+gh release create v1.1.0-preview.1 \
+  dist/Still-1.1.0-preview.1-universal.dmg \
+  dist/Still-1.1.0-preview.1-universal.dmg.sha256 \
   --repo Niklex21/still \
   --prerelease \
-  --title "Still 1.0.0 preview 1" \
+  --title "Still 1.1.0 preview 1" \
   --notes-file /path/to/release-notes.md
 ```
 
 Preview release notes should explicitly state the signing/notarization status, macOS requirements, optional model requirements, tested architecture, and installation steps. GitHub's source-code ZIP/TAR downloads contain source; the separately attached `.dmg` is the runnable app download.
+
+## Build from source instead
+
+People who prefer not to trust a prebuilt executable can clone the repository, inspect the native source and build scripts, then run `./scripts/install.sh` with Xcode 27 selected. `STILL_INSTALL_DIR` supports a user-local Applications directory. The script does not use sudo or launch the app. The optional Raycast integration has its own npm dependencies; the native Swift app has none.
+
+Before publishing, record the source commit and actual check results in the release notes, attach the DMG checksum, and complete the [QA matrix](release-qa.md). Do not substitute a passing build for a first-launch/Gatekeeper test.

@@ -5,21 +5,16 @@ import Carbon
 enum SelfTest {
     struct Failure: Error, CustomStringConvertible { let description: String }
     static func run() throws {
-        // Native clipboard tests restore the user's clipboard when they finish.
-        let clipboard = NSPasteboard.general
-        let clipboardItems = (clipboard.pasteboardItems ?? []).map { original -> NSPasteboardItem in
-            let saved = NSPasteboardItem()
-            for type in original.types { if let data = original.data(forType: type) { saved.setData(data, forType: type) } }
-            return saved
-        }
-        defer { clipboard.clearContents(); clipboard.writeObjects(clipboardItems) }
+        // A named pasteboard never replaces the user's clipboard during QA.
+        let clipboard = NSPasteboard.withUniqueName()
+        defer { clipboard.releaseGlobally() }
         var checks = 0
         func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {
             guard condition() else { throw Failure(description: message) }; checks += 1; print("PASS \(message)")
         }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("Still-SelfTest-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = try CaptureStore(root: root)
+        let store = try CaptureStore(root: root, pasteboard: clipboard)
         let width = 600, height = 400
         let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
         context.setFillColor(NSColor.white.cgColor); context.fill(CGRect(x: 0, y: 0, width: width, height: height))
@@ -47,15 +42,15 @@ enum SelfTest {
         canvas.redo(nil)
         try expect(canvas.state.marks.count == 1, "Redo restores annotation")
         try store.saveEdit(item.id, image: edited)
-        let reloaded = try CaptureStore(root: root)
+        let reloaded = try CaptureStore(root: root, pasteboard: clipboard)
         try expect(reloaded.captures.count == 1 && reloaded.captures[0].revision == 1, "Edits survive library reload")
         let original = try Imaging.load(store.disk.url(item, original: true))
         try expect(color(original, 150, 150).redComponent > 0.95, "Saved edit preserves original for revert")
         store.copy(store.captures[0])
-        try expect(NSImage(pasteboard: .general) != nil, "Copy places an actual image on clipboard")
+        try expect(NSImage(pasteboard: clipboard) != nil, "Copy places an actual image on clipboard")
         try expect(store.copiedID == item.id, "Successful copy publishes visible confirmation")
         try expect(store.pendingCount == 0 && store.shelf.isEmpty && store.captures.count == 1, "Copy consumes the queue entry while preserving history")
-        let afterCopy = try CaptureStore(root: root)
+        let afterCopy = try CaptureStore(root: root, pasteboard: clipboard)
         try expect(afterCopy.pendingCount == 0, "Handled state survives app restart")
         let viewed = try store.add(source, title: "Viewed screenshot")
         store.markReviewed(viewed.id)
@@ -190,7 +185,7 @@ enum SelfTest {
         store.togglePin(pin.id)
         let pinned = store.captures.first(where: { $0.id == pin.id })!
         try expect(pinned.isPinned && !pinned.needsAttention, "Pinning marks viewed and preserves an independent floating image")
-        let pinReload = try CaptureStore(root: root)
+        let pinReload = try CaptureStore(root: root, pasteboard: clipboard)
         try expect(pinReload.captures.first(where: { $0.id == pin.id })!.isPinned, "Pin survives a library reload")
         let pinWindow = PinnedCaptureController(item: pinned, store: store, offset: 0, onHover: { _ in })
         try expect(pinWindow.window?.level == .floating && (pinWindow.window?.frame.maxX ?? 0) <= (NSScreen.main?.visibleFrame.maxX ?? 0), "Pinned window floats within its display")
@@ -238,7 +233,7 @@ enum SelfTest {
             try expect(expandedSize.width >= compact.width && expandedSize.height >= compact.height, "Expansion contains all compact preview edges for \(count) screenshots")
         }
         let queueRoot = root.appendingPathComponent("Queue")
-        let queue = try CaptureStore(root: queueRoot)
+        let queue = try CaptureStore(root: queueRoot, pasteboard: clipboard)
         var queueItems: [Capture] = []
         for index in 0..<6 { queueItems.append(try queue.add(source, title: "Queue \(index)")) }
         let currentIDs = Array(queueItems.suffix(3).reversed().map(\.id))
@@ -252,22 +247,22 @@ enum SelfTest {
         queue.finishShelfDrag(currentIDs[0], succeeded: true)
         try expect(queue.compactShelf.recent.map(\.id) == Array(currentIDs.dropFirst()), "Dragging out a current preview never promotes an older image")
         try expect(queue.compactShelf.older.map(\.id) == olderIDs && queue.captures.count == 6, "Dragging preserves older stack and complete local history")
-        let queueReload = try CaptureStore(root: queueRoot)
+        let queueReload = try CaptureStore(root: queueRoot, pasteboard: clipboard)
         try expect(queueReload.compactShelf.recent.map(\.id) == Array(currentIDs.dropFirst()) && queueReload.compactShelf.older.map(\.id) == olderIDs, "Current and older membership survive restart without refilling slots")
         queue.togglePin(currentIDs[1])
         queue.dismissCurrentPreviews()
-        try expect(queue.compactShelf.recent.isEmpty && queue.compactShelf.older.map(\.id) == olderIDs, "Closing clears the current batch and leaves only the older stack")
+        try expect(queue.compactShelf.recent.isEmpty && queue.compactShelf.older.isEmpty, "Closing dismisses the entire queue, including older stacked previews")
         try expect(queue.captures.count == 6 && queue.captures.first(where: { $0.id == currentIDs[1] })!.isPinned, "Closing previews preserves image history and independent pins")
-        let afterClose = try CaptureStore(root: queueRoot)
-        try expect(afterClose.compactShelf.recent.isEmpty && afterClose.compactShelf.older.count == 3, "A closed batch stays cleared after app restart")
+        let afterClose = try CaptureStore(root: queueRoot, pasteboard: clipboard)
+        try expect(afterClose.compactShelf.recent.isEmpty && afterClose.compactShelf.older.isEmpty, "A closed batch stays cleared after app restart")
         let fresh = try queue.add(source, title: "New batch")
-        try expect(queue.compactShelf.recent.map(\.id) == [fresh.id] && queue.compactShelf.older.map(\.id) == olderIDs, "A new screenshot starts a fresh batch beside the existing older stack")
+        try expect(queue.compactShelf.recent.map(\.id) == [fresh.id] && queue.compactShelf.older.isEmpty, "A new screenshot cannot resurrect dismissed screenshots from History")
         let noSlots = ShelfLayout.minimizedSize(recentCount: 0, hasOlder: true)
         try expect(noSlots.width < ShelfLayout.minimizedSize(recentCount: 1, hasOlder: true).width, "An older-only stack reserves no empty preview slots")
         var legacy = queue.captures
         for i in legacy.indices { legacy[i].inPreview = nil; legacy[i].reviewedAt = i < 2 ? nil : Date() }
         try queue.disk.save(legacy)
-        let migratedQueue = try CaptureStore(root: queueRoot)
+        let migratedQueue = try CaptureStore(root: queueRoot, pasteboard: clipboard)
         try expect(migratedQueue.compactShelf.recent.map(\.id) == legacy.filter(\.needsAttention).prefix(3).map(\.id), "Old libraries migrate only unread captures into current previews")
         let display = CGRect(x: 100, y: 50, width: 1200, height: 800)
         let size = CGSize(width: 400, height: 260)
@@ -295,7 +290,7 @@ enum SelfTest {
         try expect(loadedPreferences.window.background == .solid && loadedPreferences.window.colorHex == "123456", "Window background customization survives restart")
         let upload = try queue.add(source, title: "File chooser helper")
         try expect(queue.prepareUpload(upload), "Upload helper accepts an existing screenshot")
-        try expect(NSPasteboard.general.string(forType: .string) == queue.disk.url(upload).path && NSPasteboard.general.string(forType: .fileURL) == queue.disk.url(upload).absoluteString, "Upload helper copies a chooser-ready path and file URL")
+        try expect(clipboard.string(forType: .string) == queue.disk.url(upload).path && clipboard.string(forType: .fileURL) == queue.disk.url(upload).absoluteString, "Upload helper copies a chooser-ready path and file URL")
         try expect(queue.captures.first(where: { $0.id == upload.id })!.onShelf, "Preparing an upload keeps it queued until the user chooses the file")
         try expect(!queue.prepareUpload(missing), "Upload helper refuses a missing file")
         let exported = queueRoot.appendingPathComponent("exported.png")
@@ -306,6 +301,7 @@ enum SelfTest {
         catch is Failure { throw Failure(description: "Failed-save test did not fail") } catch {}
         try expect(queue.captures.first(where: { $0.id == failedExport.id })!.onShelf, "A failed save cannot consume a waiting screenshot")
         checks += try WorkflowSelfTest.run()
+        checks += try ReleaseReadinessSelfTest.run()
         print("SELF-TEST PASSED: \(checks) checks")
     }
 }

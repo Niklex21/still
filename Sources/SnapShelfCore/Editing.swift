@@ -39,6 +39,7 @@ public struct TextRegion: Codable, Identifiable, Equatable {
     public init(text: String, rect: CGRect) { id = UUID(); self.text = text; self.rect = rect }
 }
 public struct CaptureMetadata: Codable, Equatable {
+    public var pixelScale: Double?
     public var application: String?
     public var bundleIdentifier: String?
     public var windowTitle: String?

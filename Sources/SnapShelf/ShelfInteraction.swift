@@ -57,6 +57,7 @@ final class ShelfInteraction: ObservableObject {
         })
     }
     deinit { expansionTask?.cancel(); settlingTask?.cancel(); reviewTask?.cancel() }
+    func shouldHideWhenEmpty(queueCount: Int) -> Bool { !manuallyOpened && !dragging && queueCount == 0 }
     func shouldHideWhenMinimized(pendingCount: Int) -> Bool { !manuallyOpened && !expanded && !dragging && pendingCount == 0 }
     func present(expanded: Bool, manuallyOpened: Bool = false) {
         expansionTask?.cancel(); settlingTask?.cancel(); reviewTask?.cancel()

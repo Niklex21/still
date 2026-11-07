@@ -20,6 +20,8 @@ public struct Capture: Codable, Identifiable, Equatable {
     public var editDocument: EditDocument?
     public var metadata: CaptureMetadata?
     public var textRegions: [TextRegion]?
+    public var privateCapture: Bool?
+    public var isPrivate: Bool { privateCapture == true }
     public var searchText: String { "\(title) \(text) \(visualSearchText) \(metadata?.searchText ?? "")" }
     public var hasVisualIndex: Bool { visualIndex?.version == VisualIndex.currentVersion && visualIndex?.revision == revision }
     public var visualSearchText: String { hasVisualIndex ? "\(visualIndex!.summary) \(visualIndex!.keywords.joined(separator: " "))" : "" }
@@ -62,6 +64,7 @@ public struct LibraryIndex: Codable {
 public final class LibraryDisk {
     public let root: URL
     public var images: URL { root.appendingPathComponent("Images", isDirectory: true) }
+    public var privateImages: URL { root.appendingPathComponent("Private", isDirectory: true) }
     public var indexURL: URL { root.appendingPathComponent("library.json") }
 
     public init(root: URL) throws {
@@ -73,15 +76,23 @@ public final class LibraryDisk {
         guard FileManager.default.fileExists(atPath: indexURL.path) else { return [] }
         let index = try JSONDecoder().decode(LibraryIndex.self, from: Data(contentsOf: indexURL))
         guard index.version == 1 else { throw CocoaError(.fileReadCorruptFile) }
-        return index.captures
+        guard Set(index.captures.map(\.id)).count == index.captures.count else { throw CocoaError(.fileReadCorruptFile) }
+        return index.captures.filter { !$0.isPrivate }
     }
 
     public func save(_ captures: [Capture]) throws {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(LibraryIndex(captures: captures)).write(to: indexURL, options: .atomic)
+        try encoder.encode(LibraryIndex(captures: captures.filter { !$0.isPrivate })).write(to: indexURL, options: .atomic)
     }
 
+    public func baseURL(_ capture: Capture, filename: String) -> URL {
+        let safe = URL(fileURLWithPath: filename).lastPathComponent
+        return (capture.isPrivate ? privateImages : images).appendingPathComponent(["", ".", ".."].contains(safe) ? "\(capture.id)-base.png" : safe)
+    }
     public func url(_ capture: Capture, original: Bool = false) -> URL {
-        images.appendingPathComponent(original ? capture.originalFilename : capture.filename)
+        let filename = original ? capture.originalFilename : capture.filename
+        let safe = URL(fileURLWithPath: filename).lastPathComponent
+        let fallback = original ? "\(capture.id)-original.png" : "\(capture.id).png"
+        return (capture.isPrivate ? privateImages : images).appendingPathComponent(["", ".", ".."].contains(safe) ? fallback : safe)
     }
 }

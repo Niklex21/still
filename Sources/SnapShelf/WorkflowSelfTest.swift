@@ -77,7 +77,9 @@ enum WorkflowSelfTest {
         batch.saveProject()
         let url = root.appendingPathComponent("Walkthroughs/\(project.id).json")
         try expect(try JSONDecoder().decode(Walkthrough.self, from: Data(contentsOf: url)) == project, "Walkthrough ordering and captions persist")
-        let engine = SemanticSearch(); try expect(engine.available, "Apple sentence embedding model is available")
+        let engine = SemanticSearch()
+        if !engine.available && ProcessInfo.processInfo.arguments.contains("--allow-unavailable-model") { print("SKIP semantic synonym check: system sentence model unavailable"); return checks }
+        try expect(engine.available, "Apple sentence embedding model is available")
         var meaning = Capture(title: "Picture", width: 100, height: 100)
         meaning.visualIndex = VisualIndex(summary: "An automobile driving along a highway.", keywords: ["vehicle"], revision: 0)
         try expect(!meaning.matches("car on a road") && engine.rank([meaning], query: "car on a road").first?.id == meaning.id, "Local semantic search finds synonym-only match")
