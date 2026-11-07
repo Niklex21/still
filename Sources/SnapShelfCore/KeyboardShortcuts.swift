@@ -49,7 +49,7 @@ public struct KeyboardShortcut: Codable, Equatable {
 }
 
 public struct ShortcutBindings: Codable, Equatable {
-    public var version: Int? = 4
+    public var version: Int? = 5
     public var shortcuts: [String: KeyboardShortcut]
     public init(shortcuts: [String: KeyboardShortcut] = [:]) { self.shortcuts = shortcuts }
     public subscript(_ action: ShortcutAction) -> KeyboardShortcut? {
@@ -68,13 +68,14 @@ public struct ShortcutBindings: Codable, Equatable {
     }
     public mutating func addHoverDefaults() {
         for (action, key, modifiers) in [
-            (ShortcutAction.copyHovered, 8, cmdKey), (.editHovered, 14, cmdKey),
+            (ShortcutAction.copyHovered, 8, cmdKey | optionKey), (.editHovered, 14, cmdKey),
             (.pinHovered, 35, cmdKey), (.exportHovered, 1, cmdKey),
             (.reviewHovered, 40, cmdKey), (.removeHovered, 51, cmdKey),
             (.textHovered, 8, cmdKey | shiftKey), (.revealHovered, 15, cmdKey)
         ] { self[action] = KeyboardShortcut(keyCode: UInt32(key), modifiers: UInt32(modifiers)) }
         addUploadDefault()
         addDescriptionDefault()
+        addSharingCopyDefault()
     }
     public mutating func addUploadDefault() {
         let shortcut = KeyboardShortcut(keyCode: 32, modifiers: UInt32(cmdKey))
@@ -85,6 +86,17 @@ public struct ShortcutBindings: Codable, Equatable {
         let shortcut = KeyboardShortcut(keyCode: 34, modifiers: UInt32(cmdKey))
         if !shortcuts.isEmpty, conflict(for: shortcut, excluding: .descriptionHovered) == nil { self[.descriptionHovered] = shortcut }
         version = 4
+    }
+    public mutating func addSharingCopyDefault() {
+        defer { version = max(version ?? 1, 5) }
+        guard !shortcuts.isEmpty, self[.copySharingHovered] == nil else { return }
+        let copy = KeyboardShortcut(keyCode: 8, modifiers: UInt32(cmdKey))
+        let original = KeyboardShortcut(keyCode: 8, modifiers: UInt32(cmdKey | optionKey))
+        if self[.copyHovered] == copy {
+            guard conflict(for: original, excluding: .copyHovered) == nil else { return }
+            self[.copyHovered] = original
+        }
+        if conflict(for: copy, excluding: .copySharingHovered) == nil { self[.copySharingHovered] = copy }
     }
     public func conflict(for shortcut: KeyboardShortcut, excluding action: ShortcutAction) -> ShortcutAction? {
         ShortcutAction.allCases.first { $0 != action && self[$0] == shortcut }

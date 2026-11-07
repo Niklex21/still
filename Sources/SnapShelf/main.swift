@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
     var hoveredCaptureID: UUID?
     private var hoverSource = ""
     let shortcuts = GlobalShortcutManager()
+    private let capturePreparation = DispatchQueue(label: "Still.PrepareCapture", qos: .userInitiated)
     var capturing = false
     var scrollSession: ScrollCapture?
     var selection: RegionSelector?
@@ -72,7 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
             case .region: self.capture(.region)
             case .window: self.capture(.window)
             case .screen: self.capture(.screen)
-            case .scrolling: self.capture(.scrolling)
+            case .scrolling: if let session = self.scrollSession { session.finish() } else { self.capture(.scrolling) }
             case .shelf: self.toggleShelf()
             case .library: self.searchAction()
             default: self.performHoveredAction(action)
@@ -93,6 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         else if !loginLaunch && !ProcessInfo.processInfo.arguments.contains("--background") && store.shelf.count > 0 { showShelf(manuallyOpened: false) }
     }
     func applicationWillTerminate(_ notification: Notification) {
+        scrollSession?.cancel()
         countdown?.finish(canceled: true)
         if captureProcess?.isRunning == true { captureProcess?.terminate() }
         store?.clearPrivateCaptures()
@@ -171,7 +173,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
     @objc func repeatRegionAction() { capture(.region, repeatLast: true) }
     @objc func delayedRegionAction() { capture(.region, delay: store.preferences.captureDelay) }
     @objc func privateRegionAction() { capture(.region, privateCapture: true) }
-    @objc func captureMenu(_ sender: NSMenuItem) { capture(CaptureMode.allCases[sender.tag]) }
+    @objc func captureMenu(_ sender: NSMenuItem) {
+        let mode = CaptureMode.allCases[sender.tag]
+        if mode == .scrolling, let session = scrollSession { session.showPreview() }
+        else { capture(mode) }
+    }
     @objc func importAction() { store.chooseImages() }
     @objc func pasteAction() {
         if let text = NSApp.keyWindow?.firstResponder as? NSTextView { text.paste(nil) } else { store.paste() }
@@ -193,6 +199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
     }
     var compactShelfSize: CGSize {
         let contents = store.compactShelf
+        if store.copiedID != nil && store.shelf.isEmpty && store.feedbackImage != nil { return ShelfLayout.minimizedSize(recentCount: 1,hasOlder: false) }
         return ShelfLayout.minimizedSize(recentCount: contents.recent.count, hasOlder: !contents.older.isEmpty)
     }
     func clearHoverTarget() {
@@ -332,6 +339,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
     }
     func expandShelf(_ expanded: Bool) {
         guard let panel = shelfPanel, panel.isVisible else { return }
+        if store.copiedID != nil && store.shelf.isEmpty && !shelfInteraction.manuallyOpened { return }
         if store.copiedID == nil && shelfInteraction.shouldHide(queueCount: store.shelf.count, pendingCount: store.pendingCount) {
             hideShelf()
             return
@@ -471,7 +479,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
                         if let region { metadata.pixelScale = Double(image.width) / max(1,Double(region.width.rounded())) }
                         else if mode == .screen, let primary = NSScreen.screens.first { metadata.pixelScale = Double(image.width) / max(1,Double(primary.frame.width)) }
                         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }
-                        try self.store.add(mode == .window ? self.store.preferences.frameWindow(image, screen: screen) : image, metadata: metadata, privateCapture: privateCapture)
+                        let captured = try mode == .window ? self.store.preferences.frameWindow(image, screen: screen) : image
+                        let png = try mode == .window ? nil : Data(contentsOf: url)
+                        self.enqueueCapture(captured,metadata: metadata,privateCapture: privateCapture,encodedPNG: png)
                     } catch { self.store.error = error.localizedDescription; restore(); self.showLibrary() }
                 } }
                 do { try process.run() } catch { self.captureProcess = nil; self.store.error = error.localizedDescription; restore() }
@@ -479,17 +489,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
             if delay > 0 {
                 self.countdown = CaptureCountdown(seconds: delay, screen: NSScreen.main) { [weak self] canceled in
                     self?.countdown = nil
-                    if canceled { restore() } else { DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: execute) }
+                    if canceled { restore() } else { execute() }
                 }
                 self.countdown?.start()
-            } else { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: execute) }
+            } else { execute() }
         }
         if mode == .region || mode == .scrolling {
             if repeatLast, let region = store.preferences.lastRegion, CaptureRegion.valid(region, within: captureScreens) { run(region: region); return }
-            selection = RegionSelector(instructions: mode == .scrolling ? "Select scrolling content · Drag a region · Esc to cancel" : privateCapture ? "Private capture · Drag a region · Esc to cancel" : "Capture region · Drag to select · Esc to cancel") { [weak self] region in
-                guard let self else { return }; self.selection = nil
+            selection = RegionSelector(instructions: mode == .scrolling ? "Select scrolling content · Drag a region · Esc to cancel" : privateCapture ? "Private capture · Drag a region · Esc to cancel" : "Capture region · Drag to select · Esc to cancel", minimumSize: mode == .scrolling ? 120 : 2) { [weak self] region in
+                guard let self else { return }; let frozen = self.selection?.selectedImage; self.selection = nil
                 guard let region, CaptureRegion.valid(region, within: self.captureScreens) else { restore(); return }
-                sourceApp?.activate(options: [])
                 let mainTop = NSScreen.screens.first?.frame.maxY ?? 0
                 if let display = NSScreen.screens.first(where: { CGRect(x: $0.frame.minX,y: mainTop-$0.frame.maxY,width: $0.frame.width,height: $0.frame.height).contains(CGPoint(x: region.midX,y: region.midY)) }) { metadata.pixelScale = Double(display.backingScaleFactor) }
                 if mode == .scrolling {
@@ -499,12 +508,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
                     }
                     self.scrollSession?.start()
                 } else {
+                    sourceApp?.activate(options: [])
                     if !privateCapture { self.store.preferences.lastRegion = region }
-                    run(region: region)
+                    if delay == 0 {
+                        guard let frozen else { self.store.error = "The screen could not be frozen. Try capturing the area again."; restore(); return }
+                        metadata.pixelScale = Double(frozen.width) / max(1,Double(region.width))
+                        self.capturing = false; self.pinnedWindows.values.forEach { $0.window?.orderFrontRegardless() }
+                        self.enqueueCapture(frozen,metadata: metadata,privateCapture: privateCapture)
+                    } else { run(region: region) }
                 }
             }
             selection?.start()
         } else { run(region: nil) }
+    }
+    private func enqueueCapture(_ image: CGImage, metadata: CaptureMetadata, privateCapture: Bool, encodedPNG: Data? = nil) {
+        capturePreparation.async { [weak self] in
+            let prepared = Result { (try encodedPNG ?? Imaging.png(image), try Imaging.thumbnail(image)) }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                do {
+                    let (png,thumbnail) = try prepared.get()
+                    try self.store.add(image,metadata: metadata,privateCapture: privateCapture,encodedPNG: png,thumbnail: thumbnail)
+                } catch { self.store.error = error.localizedDescription; self.showLibrary() }
+            }
+        }
     }
     func seedDemo() {
         guard store.captures.isEmpty else { return }

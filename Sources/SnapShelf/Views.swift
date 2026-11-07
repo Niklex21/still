@@ -217,8 +217,14 @@ struct ShelfView: View {
                     Button { AppDelegate.shared?.dismissShelf() } label: { Image(systemName: "xmark") }.help("Dismiss all queued previews; keep in History").accessibilityLabel("Close shelf")
                 }.buttonStyle(.plain).padding(.horizontal, 10).frame(height: 38).transition(.opacity)
             }
-            if store.captures.isEmpty || (!interaction.expanded && store.shelf.isEmpty) {
-                Image(systemName: "rectangle.stack").font(.system(size: 25, weight: .light)).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            if !interaction.manuallyOpened, store.shelf.isEmpty, store.copiedID != nil, let image = store.feedbackImage {
+                Image(nsImage: image).resizable().scaledToFit().frame(width: 152,height: 108)
+                    .clipShape(RoundedRectangle(cornerRadius: 9)).shadow(color: .black.opacity(0.16),radius: 8,y: 4)
+                    .frame(maxWidth: .infinity,maxHeight: .infinity).allowsHitTesting(false)
+            } else if store.captures.isEmpty || (!interaction.expanded && store.shelf.isEmpty) {
+                if interaction.manuallyOpened {
+                    Image(systemName: "rectangle.stack").font(.system(size: 25, weight: .light)).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else { Color.clear.frame(maxWidth: .infinity,maxHeight: .infinity) }
             } else if interaction.expanded {
                 GeometryReader { viewport in
                     ScrollView(.horizontal) {
@@ -245,6 +251,7 @@ struct ShelfView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .modifier(ShelfGlass(expanded: interaction.expanded))
+        .opacity(!interaction.manuallyOpened && store.shelf.isEmpty && store.copiedID == nil ? 0 : 1)
         .overlay(alignment: .trailing) {
             if !interaction.expanded && !store.captures.isEmpty {
                 Button { AppDelegate.shared?.showShelf(manuallyOpened: true) } label: {
@@ -433,11 +440,13 @@ private struct ScreenshotActionOverlay: View {
         Button(role: action == .dismiss && inHistory ? .destructive : nil) {
             AppDelegate.shared?.performScreenshotAction(action, item: item, interaction: interaction, pinned: pinned, inHistory: inHistory)
         } label: {
-            Image(systemName: action == .dismiss && inHistory ? "trash" : action == .pin && item.isPinned ? "pin.slash" : action.symbol)
-                .font(.system(size: size < 28 ? 11 : 14, weight: .semibold)).foregroundStyle(.primary)
+            Group {
+                if action == .copySharing && store.sharingJobs.contains(item.id) { ProgressView().controlSize(.small) }
+                else { Image(systemName: action == .dismiss && inHistory ? "trash" : action == .pin && item.isPinned ? "pin.slash" : action.symbol) }
+            }.font(.system(size: size < 28 ? 11 : 14, weight: .semibold)).foregroundStyle(.primary)
                 .frame(width: size, height: size)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9))
-        }.buttonStyle(.plain)
+        }.buttonStyle(.plain).disabled(action == .copySharing && store.sharingJobs.contains(item.id))
             .help(actionLabel(action, item: item, inHistory: inHistory)).accessibilityLabel(actionLabel(action, item: item, inHistory: inHistory))
             .onHover { inside in
                 if inside { NSCursor.arrow.set() }

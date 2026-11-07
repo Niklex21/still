@@ -21,7 +21,7 @@ Prefer to inspect and compile it yourself? Follow [Build and install](#build-and
 
 ## What it does
 
-- **Capture:** region, window, main screen, and manually scrolled screenshots. Repeat the last region, delay a capture, or take a private region outside History. Center window captures on wallpaper or a customizable background.
+- **Capture:** region, window, main screen, and live scrolling screenshots. Repeat the last region, delay a capture, or take a private region outside History. Center window captures on wallpaper or a customizable background.
 - **Keep screenshots handy:** up to three current previews, with an older queue behind them. Drag images into another app, copy, edit, save, dismiss, or pin them above your windows.
 - **Annotate without losing your edits:** arrows, shapes, freehand drawing, text, highlights, opaque redactions, numbered feedback pins, and reversible cropping. Saved marks stay editable. Zoom/pan, inspect at 100% pixels, and edit text inline.
 - **Extract text:** recognize screenshot text locally, select words or a region, and copy any substring.
@@ -102,6 +102,12 @@ Hovering a preview dims its image and reveals corner actions. Configure their po
 
 The queue starts at the bottom left. **Pin to Screen** creates a separate floating image at the bottom right; additional pins overlap in a diagonal stack. Both remember moved positions. Drag a pin to move it, Option-drag to export it, and resize from a corner. Pins survive app restarts.
 
+### Live scrolling capture
+
+Press **⌥⇧4**, select the content area, then scroll downward. A click-through outline marks the selected area while a small movable preview beside it grows with the stitched image. The preview is excluded from the capture; it stays visible without flashing. Press the scrolling shortcut again or click the checkmark to finish. The × cancels. If a scroll jumps beyond the available overlap, move back slightly and continue more slowly.
+
+Normal area captures use the frozen screen shown during selection, so switching apps immediately afterward cannot change their pixels. There are no intentional waits before normal capture. Encoding and thumbnail preparation happen in the background; only Delayed Capture uses a countdown.
+
 ### Repeat, delay, sharing, and privacy
 
 The menu bar includes **Repeat Last Region**, **Delayed Region**, and **Private Region**. Assign any of them a shortcut in Settings. Repeating validates the previous region against connected displays; if it is no longer available, select a new region. Set the delay to 3, 5, or 10 seconds in General; the small countdown has a cancel button.
@@ -128,7 +134,8 @@ While hovering a screenshot:
 
 | Action | Default |
 | --- | --- |
-| Copy image / copy recognized text | ⌘C / ⇧⌘C |
+| Copy for Sharing / original image | ⌘C / ⌥⌘C |
+| Copy recognized text | ⇧⌘C |
 | Annotate / pin or unpin | ⌘E / ⌘P |
 | Export / prepare for upload | ⌘S / ⌘U |
 | Show description / reveal in Finder | ⌘I / ⌘R |

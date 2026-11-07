@@ -40,7 +40,8 @@ final class CaptureStore: ObservableObject {
     private var privateUseCount: [UUID: Int] = [:]
     private var maintenanceSubscription: AnyCancellable?
     private var maintenanceTimer: Timer?
-    private var sharingJobs: Set<UUID> = []
+    @Published private(set) var sharingJobs: Set<UUID> = []
+    @Published private(set) var feedbackImage: NSImage?
     @Published private(set) var cleanupStatus = ""
     var history: [Capture] { captures.filter { !$0.isPrivate } }
     @Published private(set) var feedbackMessage = "Copied"
@@ -278,11 +279,16 @@ final class CaptureStore: ObservableObject {
               let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 700] as CFDictionary) else { return nil }
         let result = NSImage(cgImage: cg, size: .zero); thumbnails.setObject(result, forKey: key, cost: cg.bytesPerRow * cg.height); return result
     }
-    @discardableResult func add(_ image: CGImage, title: String? = nil, metadata: CaptureMetadata? = nil, privateCapture: Bool = false) throws -> Capture {
+    @discardableResult func add(_ image: CGImage, title: String? = nil, metadata: CaptureMetadata? = nil, privateCapture: Bool = false, encodedPNG: Data? = nil, thumbnail: CGImage? = nil) throws -> Capture {
         guard image.width <= 30_000, image.height <= 30_000, image.width * image.height <= 150_000_000 else { throw Imaging.ImageError.tooLarge }
         let name = title ?? "Screenshot \(Date().formatted(date: .abbreviated, time: .shortened))"
         var item = Capture(title: name, width: image.width, height: image.height); item.metadata = metadata; item.privateCapture = privateCapture
-        let data = try Imaging.png(image)
+        let data = try encodedPNG ?? Imaging.png(image)
+        if encodedPNG != nil {
+            guard let source = CGImageSourceCreateWithData(data as CFData,nil), CGImageSourceGetType(source) as String? == "public.png",
+                  let properties = CGImageSourceCopyPropertiesAtIndex(source,0,nil) as? [CFString: Any],
+                  properties[kCGImagePropertyPixelWidth] as? Int == image.width, properties[kCGImagePropertyPixelHeight] as? Int == image.height else { throw Imaging.ImageError.invalid }
+        }
         if privateCapture { try FileManager.default.createDirectory(at: disk.privateImages, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]) }
         do {
             try data.write(to: disk.url(item, original: true), options: .atomic)
@@ -303,8 +309,12 @@ final class CaptureStore: ObservableObject {
             try? FileManager.default.removeItem(at: disk.url(item, original: true)); try? FileManager.default.removeItem(at: disk.url(item)); throw error
         }
         captures = next
+        copyFeedbackTask?.cancel(); copiedID = nil; feedbackImage = nil
         discardHandledPrivateCaptures()
         if !privateCapture { index(item, image: image); startVisualIndexing() }
+        if let thumbnail {
+            thumbnails.setObject(NSImage(cgImage: thumbnail,size: .zero),forKey: "\(item.id)-\(item.revision)" as NSString,cost: thumbnail.bytesPerRow * thumbnail.height)
+        }
         onImport?(); return item
     }
     func importURLs(_ urls: [URL]) {
@@ -369,11 +379,12 @@ final class CaptureStore: ObservableObject {
     }
     private func showCopyConfirmation(_ id: UUID, message: String = "Copied", detail: String? = nil) {
         copyFeedbackTask?.cancel()
+        feedbackImage = captures.first(where: { $0.id == id }).flatMap { thumbnail($0) }
         feedbackMessage = message; feedbackDetail = detail
         copiedID = id
-        let task = DispatchWorkItem { [weak self] in self?.copiedID = nil }
+        let task = DispatchWorkItem { [weak self] in self?.copiedID = nil; self?.feedbackImage = nil }
         copyFeedbackTask = task
-        DispatchQueue.main.asyncAfter(deadline: .now() + (detail == nil ? 1.4 : 3.0), execute: task)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (message == "Path copied" ? 3.0 : 0.8), execute: task)
     }
     func paste() {
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty { importURLs(urls); return }
