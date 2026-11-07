@@ -93,7 +93,7 @@ final class CaptureStore: ObservableObject {
             try disk.save(captures)
         }
         searchSubscription = Publishers.CombineLatest3($query, $captures, $semanticSearchEnabled).debounce(for: .milliseconds(180), scheduler: DispatchQueue.main).sink { [weak self] _ in self?.refreshSearch() }
-        thumbnails.countLimit = 150
+        thumbnails.countLimit = 150; thumbnails.totalCostLimit = 96 * 1024 * 1024
         // Resume indexing interrupted by a quit or crash, including older indexes.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -274,7 +274,7 @@ final class CaptureStore: ObservableObject {
         if let cached = thumbnails.object(forKey: key) { return cached }
         guard let source = CGImageSourceCreateWithURL(disk.url(item) as CFURL, nil),
               let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 700] as CFDictionary) else { return nil }
-        let result = NSImage(cgImage: cg, size: .zero); thumbnails.setObject(result, forKey: key); return result
+        let result = NSImage(cgImage: cg, size: .zero); thumbnails.setObject(result, forKey: key, cost: cg.bytesPerRow * cg.height); return result
     }
     @discardableResult func add(_ image: CGImage, title: String? = nil, metadata: CaptureMetadata? = nil, privateCapture: Bool = false) throws -> Capture {
         guard image.width <= 30_000, image.height <= 30_000, image.width * image.height <= 150_000_000 else { throw Imaging.ImageError.tooLarge }

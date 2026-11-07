@@ -50,3 +50,7 @@ Do these in an approved desktop session or on a spare Mac. These are **not impli
 ## Current release pass
 
 The release-readiness branch is undergoing these checks. Do not treat this document as a signed-off checklist. Record observed counts, CI run, source commit, DMG checksum, tested OS/architecture, model availability, and remaining manual gates in the PR/release notes. The developer's running app is not replaced during automated testing.
+
+### 2026-11-07 local evidence
+
+On Apple Silicon with macOS/Xcode 27: 38 Swift tests and 177 native checks passed; controlled visual-index lifecycle checks passed; real on-device chart, edited shape, and bundled icon inference passed. Raycast typecheck, five tests, isolated production build, and npm audit passed with zero advisories. The source installer built, verified, and installed into `.build/install-qa` without launching. The first new universal DMG mounted read-only, passed strict signature verification, exposed both architecture slices, and passed the same 177 native checks from its mounted bundle. These counts do not sign off the manual gate above. The final rebuilt artifact and remote CI are recorded in the PR.
