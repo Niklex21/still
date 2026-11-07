@@ -173,7 +173,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
     @objc func repeatRegionAction() { capture(.region, repeatLast: true) }
     @objc func delayedRegionAction() { capture(.region, delay: store.preferences.captureDelay) }
     @objc func privateRegionAction() { capture(.region, privateCapture: true) }
-    @objc func captureMenu(_ sender: NSMenuItem) { capture(CaptureMode.allCases[sender.tag]) }
+    @objc func captureMenu(_ sender: NSMenuItem) {
+        let mode = CaptureMode.allCases[sender.tag]
+        if mode == .scrolling, let session = scrollSession { session.showPreview() }
+        else { capture(mode) }
+    }
     @objc func importAction() { store.chooseImages() }
     @objc func pasteAction() {
         if let text = NSApp.keyWindow?.firstResponder as? NSTextView { text.paste(nil) } else { store.paste() }
@@ -495,7 +499,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
             selection = RegionSelector(instructions: mode == .scrolling ? "Select scrolling content · Drag a region · Esc to cancel" : privateCapture ? "Private capture · Drag a region · Esc to cancel" : "Capture region · Drag to select · Esc to cancel", minimumSize: mode == .scrolling ? 120 : 2) { [weak self] region in
                 guard let self else { return }; let frozen = self.selection?.selectedImage; self.selection = nil
                 guard let region, CaptureRegion.valid(region, within: self.captureScreens) else { restore(); return }
-                sourceApp?.activate(options: [])
                 let mainTop = NSScreen.screens.first?.frame.maxY ?? 0
                 if let display = NSScreen.screens.first(where: { CGRect(x: $0.frame.minX,y: mainTop-$0.frame.maxY,width: $0.frame.width,height: $0.frame.height).contains(CGPoint(x: region.midX,y: region.midY)) }) { metadata.pixelScale = Double(display.backingScaleFactor) }
                 if mode == .scrolling {
@@ -505,6 +508,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
                     }
                     self.scrollSession?.start()
                 } else {
+                    sourceApp?.activate(options: [])
                     if !privateCapture { self.store.preferences.lastRegion = region }
                     if delay == 0 {
                         guard let frozen else { self.store.error = "The screen could not be frozen. Try capturing the area again."; restore(); return }

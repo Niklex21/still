@@ -2,6 +2,7 @@ import AppKit
 import ScreenCaptureKit
 import CoreMedia
 import CoreImage
+import OSLog
 import SnapShelfCore
 
 protocol ScrollFrameSource: AnyObject {
@@ -30,6 +31,8 @@ final class ScrollFrameDecoder {
 /// Continuous pixels, with all of Still excluded at the compositor. The border
 /// and preview can remain on-screen, including when they overlap the region.
 final class ScreenRegionStream: NSObject, ScrollFrameSource, SCStreamOutput, SCStreamDelegate {
+    private let logger = Logger(subsystem: "local.alex.Still",category: "ScrollingCapture")
+    private var loggedFirstSample = false
     private var stream: SCStream?
     private let queue = DispatchQueue(label: "Still.ScrollFrames", qos: .userInitiated)
     private let decoder = ScrollFrameDecoder()
@@ -53,7 +56,7 @@ final class ScreenRegionStream: NSObject, ScrollFrameSource, SCStreamOutput, SCS
         let next = SCStream(filter: filter, configuration: configuration, delegate: self)
         try next.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
         setCallbacks((frame,failure)); stream = next
-        do { try await next.startCapture(); try Task.checkCancellation() }
+        do { try await next.startCapture(); logger.info("Continuous stream started"); try Task.checkCancellation() }
         catch {
             // stop() may already have detached a stream while startCapture was
             // still pending. Stop this exact instance after the start resolves.
@@ -71,6 +74,7 @@ final class ScreenRegionStream: NSObject, ScrollFrameSource, SCStreamOutput, SCS
     private func setCallbacks(_ value: (((CGImage) -> Void), ((Error) -> Void))?) { lock.lock(); callbacks = value; lock.unlock() }
     private func currentCallbacks() -> (((CGImage) -> Void), ((Error) -> Void))? { lock.lock(); defer { lock.unlock() }; return callbacks }
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        if !loggedFirstSample { logger.info("Received first stream sample"); loggedFirstSample = true }
         guard type == .screen, sampleBuffer.isValid, let callbacks = currentCallbacks(),
               let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
               let raw = attachments.first?[.status] as? Int, let status = SCFrameStatus(rawValue: raw),
@@ -80,7 +84,7 @@ final class ScreenRegionStream: NSObject, ScrollFrameSource, SCStreamOutput, SCS
             do { callbacks.0(try decoder.decode(pixels)) } catch { callbacks.1(error) }
         }
     }
-    func stream(_ stream: SCStream, didStopWithError error: Error) { currentCallbacks()?.1(error) }
+    func stream(_ stream: SCStream, didStopWithError error: Error) { logger.error("Stream stopped: \(error.localizedDescription,privacy: .public)"); currentCallbacks()?.1(error) }
     enum StreamError: LocalizedError {
         case displayUnavailable, exclusionUnavailable
         var errorDescription: String? {

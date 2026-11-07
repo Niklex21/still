@@ -63,6 +63,10 @@ final class ScrollCapture {
         let host = NSHostingView(rootView: ScrollProgressView(progress: progress)); host.sizingOptions = []; panel.contentView = host
         panel.orderFrontRegardless(); self.panel = panel
     }
+    func showPreview() {
+        panel?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
     private func receive(_ image: CGImage) {
         guard gate.isOpen else { return }
         frameLock.lock(); latestFrame = image
