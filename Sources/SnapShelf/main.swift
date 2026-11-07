@@ -466,6 +466,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
                     guard child.terminationStatus == 0, FileManager.default.fileExists(atPath: url.path) else { restore(); return }
                     do {
                         let image = try Imaging.load(url)
+                        // Derive scale from actual output: repeat-region may run while
+                        // the pointer is on a different display.
+                        if let region { metadata.pixelScale = Double(image.width) / max(1,Double(region.width.rounded())) }
+                        else if mode == .screen, let primary = NSScreen.screens.first { metadata.pixelScale = Double(image.width) / max(1,Double(primary.frame.width)) }
                         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }
                         try self.store.add(mode == .window ? self.store.preferences.frameWindow(image, screen: screen) : image, metadata: metadata, privateCapture: privateCapture)
                     } catch { self.store.error = error.localizedDescription; restore(); self.showLibrary() }
