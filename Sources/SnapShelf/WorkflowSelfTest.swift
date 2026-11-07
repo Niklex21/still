@@ -47,6 +47,7 @@ enum WorkflowSelfTest {
         try FileManager.default.removeItem(at: store.disk.indexURL); try FileManager.default.moveItem(at: backup, to: store.disk.indexURL)
         let words = try Imaging.recognizeRegions(image), lines = try Imaging.recognizeRegions(image, words: false)
         try expect(words.contains { $0.text.contains("alex@example.com") }, "Real OCR recognizes selectable email")
+        try expect(try Imaging.recognizeAll(image, cpuOnly: true).text.contains("alex@example.com"), "CPU OCR fallback recognizes the same real email")
         let email = words.first { $0.text.contains("alex@example.com") }!
         try expect(email.rect.minY < 130 && email.rect.maxY > 60, "OCR boxes use top-left coordinates")
         try expect(words.contains { $0.text.lowercased() == "ready" && $0.rect.minY > 300 }, "OCR retains lower-line word positions")

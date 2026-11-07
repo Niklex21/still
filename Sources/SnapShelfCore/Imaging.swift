@@ -1,5 +1,6 @@
 import AppKit
 import Vision
+import CoreML
 
 public enum Imaging {
     /// Frames a window capture on a subtle backdrop, without scaling its pixels.
@@ -66,9 +67,24 @@ public enum Imaging {
         let result = try recognizeAll(image); return words ? result.words : result.lines
     }
     /// One Vision request supplies both searchable text and precise selectable words.
-    public static func recognizeAll(_ image: CGImage) throws -> (text: String, words: [TextRegion], lines: [TextRegion]) {
-        let request = VNRecognizeTextRequest(); request.recognitionLevel = .accurate; request.usesLanguageCorrection = true
-        try VNImageRequestHandler(cgImage: image).perform([request])
+    public static func recognizeAll(_ image: CGImage, cpuOnly: Bool = false) throws -> (text: String, words: [TextRegion], lines: [TextRegion]) {
+        func makeRequest(cpu: Bool) throws -> VNRecognizeTextRequest {
+            let request = VNRecognizeTextRequest(); request.recognitionLevel = .accurate; request.usesLanguageCorrection = true
+            if cpu {
+                guard let device = MLComputeDevice.allComputeDevices.first(where: { if case .cpu = $0 { return true }; return false }) else { throw ImageError.invalid }
+                request.setComputeDevice(device, for: .main)
+            }
+            return request
+        }
+        var request = try makeRequest(cpu: cpuOnly)
+        do { try VNImageRequestHandler(cgImage: image).perform([request]) }
+        catch {
+            guard !cpuOnly else { throw error }
+            // Virtual machines and some graphics configurations cannot run Vision's
+            // preferred compute backend. Retry a fresh request on the CPU.
+            request = try makeRequest(cpu: true)
+            try VNImageRequestHandler(cgImage: image).perform([request])
+        }
         func pixels(_ r: CGRect) -> CGRect { CGRect(x: r.minX * CGFloat(image.width), y: (1 - r.maxY) * CGFloat(image.height), width: r.width * CGFloat(image.width), height: r.height * CGFloat(image.height)) }
         var words: [TextRegion] = [], lines: [TextRegion] = []
         let regex = try NSRegularExpression(pattern: #"\S+"#)
