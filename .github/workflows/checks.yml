@@ -38,7 +38,8 @@ jobs:
           STILL_RELEASE_LABEL: ci-${{ github.run_number }}
         run: |
           ./scripts/package-dmg.sh
-          lipo dist/Still.app/Contents/MacOS/Still -verify_arch arm64 x86_64
+          lipo dist/Still.app/Contents/MacOS/Still -verify_arch arm64
+          lipo dist/Still.app/Contents/MacOS/Still -verify_arch x86_64
           codesign --verify --deep --strict dist/Still.app
           dist/Still.app/Contents/MacOS/Still --self-test --allow-unavailable-model
       - name: Offscreen UI snapshots
@@ -75,7 +76,8 @@ jobs:
           hdiutil attach -readonly -nobrowse -mountpoint "$PWD/mounted" ./*.dmg
           trap 'hdiutil detach "$PWD/mounted"' EXIT
           codesign --verify --deep --strict mounted/Still.app
-          lipo mounted/Still.app/Contents/MacOS/Still -verify_arch arm64 x86_64
+          lipo mounted/Still.app/Contents/MacOS/Still -verify_arch arm64
+          lipo mounted/Still.app/Contents/MacOS/Still -verify_arch x86_64
           mounted/Still.app/Contents/MacOS/Still --self-test --allow-unavailable-model
           mounted/Still.app/Contents/MacOS/Still --visual-search-self-test
   raycast:
