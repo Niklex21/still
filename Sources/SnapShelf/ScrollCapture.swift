@@ -23,10 +23,11 @@ final class RegionSelector {
             let screens = NSScreen.screens
             var backgrounds: [CGDirectDisplayID: CGImage] = [:]
             if let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true) {
+                let ownApplications = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
                 for display in content.displays {
                     let scale = screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == display.displayID }?.backingScaleFactor ?? 1
                     let config = SCStreamConfiguration(); config.width = Int(CGFloat(display.width) * scale); config.height = Int(CGFloat(display.height) * scale); config.showsCursor = false
-                    let filter = SCContentFilter(display: display, excludingWindows: [])
+                    let filter = SCContentFilter(display: display, excludingApplications: ownApplications, exceptingWindows: [])
                     if let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) { backgrounds[display.displayID] = image }
                 }
             }

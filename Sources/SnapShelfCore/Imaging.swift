@@ -146,25 +146,69 @@ public final class ScrollStitcher {
         guard image.width == previous.width, image.height == previous.height else { throw Imaging.ImageError.noOverlap }
         let a = gray(previous), b = gray(image), h = image.height, w = 64
         let margin = max(8, h / 12) // tolerate a small sticky header/footer
-        func score(_ shift: Int) -> Double {
-            var error = 0.0, count = 0
+        let rowStep = max(2, h / 100)
+        // Static sidebars and broad white margins are not scroll evidence.
+        // Match only columns that actually changed at their screen position.
+        let columns = stride(from: 4, to: 60, by: 2).filter { x in
+            var error = 0, changes = 0, count = 0
+            for y in stride(from: margin, to: h - margin, by: rowStep) {
+                let delta = abs(Int(a[y*w+x]) - Int(b[y*w+x]))
+                error += delta; changes += delta > 2 ? 1 : 0; count += 1
+            }
+            return changes >= 3 && Double(error) / Double(max(1,count)) > 0.3
+        }
+        guard !columns.isEmpty else { lastShift = 0; return false }
+        func details(_ pixels: [UInt8]) -> [UInt8] {
+            var result = [UInt8](repeating: 0,count: pixels.count)
+            for y in 1..<h-1 { for x in columns {
+                let index = y*w+x, center = Int(pixels[index])
+                result[index] = UInt8(max(abs(center-Int(pixels[index-1])),abs(center-Int(pixels[index+1])),
+                                         abs(center-Int(pixels[index-w])),abs(center-Int(pixels[index+w]))))
+            } }
+            return result
+        }
+        let detailA = details(a), detailB = details(b)
+        func score(_ shift: Int, dense: Bool = false) -> Double {
+            var error = 0.0, count = 0, detailedRows = 0
             let end = h - shift - margin
             guard end > margin + 30 else { return .infinity }
-            for y in stride(from: margin, to: end, by: max(2, h / 100)) {
-                for x in stride(from: 10, to: 54, by: 2) {
-                    error += abs(Double(a[(y + shift) * w + x]) - Double(b[y * w + x])); count += 1
+            for y in stride(from: margin, to: end, by: dense ? 1 : rowStep) {
+                var detailed = false
+                for x in columns {
+                    let ai = (y+shift)*w+x, bi = y*w+x
+                    // Empty white overlap previously scored zero and could beat
+                    // the actual text alignment, duplicating most of the page.
+                    guard max(detailA[ai],detailB[bi]) > 4 else { continue }
+                    error += abs(Double(a[ai])-Double(b[bi])); count += 1; detailed = true
                 }
+                if detailed { detailedRows += 1 }
             }
+            guard detailedRows >= 4, count >= max(16,columns.count*2) else { return .infinity }
             return error / Double(max(1, count))
         }
-        if score(0) < 0.8 { lastShift = 0; return false }
+        let stationaryError = score(0)
+        if stationaryError < 0.8 { lastShift = 0; return false }
         var best = (shift: 0, error: Double.infinity)
         // Evaluate every pixel offset: a coarse offset stride can skip the only
         // correct alignment on text or other high-frequency content.
         for shift in 1...max(1, h * 3 / 4) {
             let s = score(shift); if s < best.error { best = (shift, s) }
         }
-        guard best.error < 9.0 else { throw Imaging.ImageError.noOverlap }
+        // Resolve one-pixel ambiguities hidden between sampled rows. This also
+        // avoids accumulating a one-pixel seam error on every small scroll.
+        if best.error.isFinite {
+            let start = max(1,best.shift-rowStep), end = min(h*3/4,best.shift+rowStep)
+            best.error = .infinity
+            for shift in start...end {
+                let s = score(shift,dense: true); if s < best.error { best = (shift,s) }
+            }
+        }
+        // Detail-only error is stricter than a white-diluted whole-frame mean;
+        // allow small antialiasing changes while still requiring motion evidence.
+        guard best.error < 14.0 else { throw Imaging.ImageError.noOverlap }
+        // Hover/antialiasing changes are not scrolling. Translation must explain
+        // the pixels substantially better than leaving them where they are.
+        guard best.error + 0.5 < stationaryError * 0.8 else { lastShift = 0; return false }
         let shift = best.shift
         guard result.height + shift <= 30_000, Int64(result.width) * Int64(result.height + shift) <= 150_000_000 else { throw Imaging.ImageError.tooLarge }
         // Join near the beginning of the overlap, below the sticky-header band.
