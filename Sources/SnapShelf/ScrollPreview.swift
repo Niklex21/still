@@ -12,6 +12,7 @@ final class ScrollProgress: ObservableObject {
     @Published var message = "Preparing capture…"
     @Published var warning = false
     var finishShortcut: String?
+    var sourceApplication: String?
     var finish: (() -> Void)?
     var cancel: (() -> Void)?
     var canFinish: Bool { frames > 0 && (phase == .recording || phase == .failed) }
@@ -28,6 +29,7 @@ struct ScrollProgressView: View {
                 ZStack {
                     ShelfMoveHandle()
                     Text("Scrolling capture").font(.system(size: 11,weight: .semibold)).allowsHitTesting(false)
+                        .accessibilityLabel(progress.sourceApplication.map { "Scrolling capture from \($0)" } ?? "Scrolling capture")
                 }.frame(maxWidth: .infinity).frame(height: 26).help("Drag to move")
                 Button { progress.finish?() } label: { Image(systemName: "checkmark").font(.system(size: 12,weight: .semibold)).frame(width: 24,height: 22) }
                     .buttonStyle(.borderedProminent).buttonBorderShape(.capsule).disabled(!progress.canFinish)

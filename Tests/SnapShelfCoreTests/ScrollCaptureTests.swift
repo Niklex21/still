@@ -3,6 +3,11 @@ import Carbon
 @testable import SnapShelfCore
 
 final class ScrollCaptureTests: XCTestCase {
+    func testWindowCaptureCropKeepsSelectedPixelsIndependentOfDisplayPosition() {
+        let window = CGRect(x: -1200,y: 30,width: 1000,height: 800), region = CGRect(x: -1100,y: 130,width: 700,height: 500)
+        XCTAssertEqual(ScrollCaptureLayout.windowCrop(region: region,window: window,pixels: CGSize(width: 2000,height: 1600)),CGRect(x: 200,y: 200,width: 1400,height: 1000))
+        XCTAssertEqual(ScrollCaptureLayout.windowCrop(region: region,window: window,pixels: CGSize(width: 1000,height: 800)),CGRect(x: 100,y: 100,width: 700,height: 500))
+    }
     func testScrollingRestoresSelectedWindowInsteadOfMenuOwner() {
         let frame = CGRect(x: 0,y: 30,width: 1200,height: 800)
         let windows: [ScrollCaptureLayout.WindowTarget] = [.init(processID: 10,frame: frame),.init(processID: 20,frame: frame),.init(processID: 30,frame: frame)]

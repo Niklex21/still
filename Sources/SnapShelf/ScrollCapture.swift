@@ -17,6 +17,7 @@ final class RegionSelector {
     var completed = false
     var selectedImage: CGImage?
     var selectedProcessID: Int32?
+    var selectedWindowID: CGWindowID?
     let minimumSize: CGFloat
     init(instructions: String = "Select scrolling content · Drag a region · Esc to cancel", minimumSize: CGFloat = 2, completion: @escaping (CGRect?) -> Void) { self.instructions = instructions; self.minimumSize = minimumSize; self.completion = completion }
     func start() {
@@ -41,7 +42,7 @@ final class RegionSelector {
                   let layer = info[kCGWindowLayer as String] as? Int,
                   let bounds = info[kCGWindowBounds as String] as? [String: Any],
                   let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
-            return .init(processID: pid,frame: frame,layer: layer)
+            return .init(processID: pid,frame: frame,layer: layer,windowID: (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value ?? 0)
         }
         for screen in screens {
             let panel = SelectionPanel(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
@@ -63,7 +64,9 @@ final class RegionSelector {
                     let global = local.offsetBy(dx: screen.frame.minX, dy: screen.frame.minY)
                     let mainTop = NSScreen.screens.first?.frame.maxY ?? 0
                     let rect = CGRect(x: global.minX, y: mainTop - global.maxY, width: global.width, height: global.height)
-                    self.selectedProcessID = ScrollCaptureLayout.targetProcess(region: rect,windows: windows,ownProcess: ProcessInfo.processInfo.processIdentifier)
+                    let target = ScrollCaptureLayout.targetWindow(region: rect,windows: windows,ownProcess: ProcessInfo.processInfo.processIdentifier)
+                    self.selectedProcessID = target?.processID
+                    if let target, target.windowID != 0, target.frame.contains(rect) { self.selectedWindowID = target.windowID }
                     self.finish(rect)
                 } else { self.finish(nil) }
             }

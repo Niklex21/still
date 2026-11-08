@@ -24,8 +24,9 @@ final class ScrollCapture {
     // Only accessed on main.
     private var completed = false
     private var started = false
-    init(rect: CGRect, store: CaptureStore, metadata: CaptureMetadata? = nil, source: (any ScrollFrameSource)? = nil, done: @escaping () -> Void) {
-        self.rect = rect; self.store = store; self.metadata = metadata; self.source = source ?? ScreenRegionStream(); self.done = done
+    init(rect: CGRect, store: CaptureStore, metadata: CaptureMetadata? = nil, source: (any ScrollFrameSource)? = nil, sourceWindowID: CGWindowID? = nil, done: @escaping () -> Void) {
+        self.rect = rect; self.store = store; self.metadata = metadata; self.source = source ?? ScreenRegionStream(windowID: sourceWindowID); self.done = done
+        progress.sourceApplication = metadata?.application
         progress.finish = { [weak self] in self?.finish() }; progress.cancel = { [weak self] in self?.cancel() }
     }
     func start(showUI: Bool = true) {
