@@ -126,6 +126,7 @@ public enum Imaging {
 public final class ScrollStitcher {
     public private(set) var result: CGImage
     private var previous: CGImage
+    private var stickyTopInset = 0
     public private(set) var frameCount = 1
     public private(set) var lastShift = 0
     public init(first: CGImage) { result = first; previous = first }
@@ -158,6 +159,16 @@ public final class ScrollStitcher {
             return changes >= 3 && Double(error) / Double(max(1,count)) > 0.3
         }
         guard !columns.isEmpty else { lastShift = 0; return false }
+        // Estimate a taller stationary header before matching. Stop as soon as
+        // moving content is visible; a white gap alone is not a matching feature.
+        let probes = Array(stride(from: 4,to: 60,by: 2))
+        var leadingStableRows = 0
+        for y in 0..<h/3 {
+            let stable = probes.reduce(0) { $0 + (abs(Int(a[y*w+$1])-Int(b[y*w+$1])) <= 2 ? 1 : 0) }
+            guard stable*10 >= probes.count*9 else { break }
+            leadingStableRows = y+1
+        }
+        let matchingTop = max(margin,leadingStableRows)
         func details(_ pixels: [UInt8]) -> [UInt8] {
             var result = [UInt8](repeating: 0,count: pixels.count)
             for y in 1..<h-1 { for x in columns {
@@ -171,8 +182,8 @@ public final class ScrollStitcher {
         func score(_ shift: Int, dense: Bool = false) -> Double {
             var error = 0.0, count = 0, detailedRows = 0
             let end = h - shift - margin
-            guard end > margin + 30 else { return .infinity }
-            for y in stride(from: margin, to: end, by: dense ? 1 : rowStep) {
+            guard end > matchingTop + 30 else { return .infinity }
+            for y in stride(from: matchingTop, to: end, by: dense ? 1 : rowStep) {
                 var detailed = false
                 for x in columns {
                     let ai = (y+shift)*w+x, bi = y*w+x
@@ -216,7 +227,24 @@ public final class ScrollStitcher {
         // into a trail: they often sit above the narrow bottom margin. Replace
         // the rest of that viewport with fresh pixels instead. A fixed footer
         // remains only in the newest viewport, where it can be replaced again.
-        let incomingStart = margin
+        // Locate stationary chrome inside the overlap, including taller headers
+        // and short pinned navigation panels. Consecutive matching pixels at the
+        // same screen position, but not at the scroll offset, distinguish these
+        // from scrolling body content and accidental matches in a photo.
+        var runs = [Int](repeating: 0,count: w), fixedEnd = 0
+        for y in 0..<max(0,min(h/2,h-shift-32)) {
+            var supportedColumns = 0, longRun = false
+            for x in stride(from: 4,to: 60,by: 2) {
+                let p = y*w+x, aligned = (y+shift)*w+x
+                if abs(Int(a[p])-Int(b[p])) <= 2 && abs(Int(a[aligned])-Int(b[p])) >= 8 { runs[x] += 1 }
+                else { runs[x] = 0 }
+                if runs[x] >= 3 { supportedColumns += 1 }
+                if runs[x] >= 6 { longRun = true }
+            }
+            if supportedColumns >= 2 || longRun { fixedEnd = y+8 }
+        }
+        let incomingStart = max(margin,stickyTopInset,fixedEnd)
+        guard incomingStart+shift < h-30 else { throw Imaging.ImageError.noOverlap }
         let additionHeight = h - incomingStart
         let seam = result.height - h + shift + incomingStart
         let newHeight = result.height + shift
@@ -226,7 +254,7 @@ public final class ScrollStitcher {
         c.draw(old, in: CGRect(x: 0, y: newHeight - seam, width: result.width, height: seam))
         c.draw(addition, in: CGRect(x: 0, y: 0, width: image.width, height: additionHeight))
         guard let merged = c.makeImage() else { throw Imaging.ImageError.invalid }
-        result = merged; previous = image; frameCount += 1; lastShift = shift
+        result = merged; previous = image; stickyTopInset = incomingStart; frameCount += 1; lastShift = shift
         return true
     }
 }

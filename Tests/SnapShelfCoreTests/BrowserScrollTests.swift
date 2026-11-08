@@ -3,6 +3,19 @@ import AppKit
 @testable import SnapShelfCore
 
 final class BrowserScrollTests: XCTestCase {
+    func testRealBrowserPinnedNavigationDoesNotRepeatDownThePage() throws {
+        let first = try viewport(0), next = try viewport(1), stitcher = ScrollStitcher(first: first)
+        XCTAssertTrue(try stitcher.append(next))
+        let a = pixels(first), output = pixels(stitcher.result), width = first.width
+        var mismatches = 0
+        // This fixed navigation column has no bottom floating button. Its labels
+        // should stay at their original positions, with blank panel below them.
+        for y in 0..<stitcher.result.height { for x in 2540..<2850 {
+            let i = (min(y,first.height-1)*width+x)*4, j = (y*width+x)*4
+            for channel in 0..<3 { if a[i+channel] != output[j+channel] { mismatches += 1 } }
+        } }
+        XCTAssertEqual(mismatches,0,"Pinned On this page labels must not be duplicated at each seam")
+    }
     private func viewport(_ number: Int) throws -> CGImage {
         let url = try XCTUnwrap(Bundle.module.url(forResource: "viewport-\(number)",withExtension: "png",subdirectory: "Fixtures/Bootstrap"))
         return try Imaging.load(url)
