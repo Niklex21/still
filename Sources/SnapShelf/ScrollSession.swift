@@ -65,7 +65,6 @@ final class ScrollCapture {
     }
     func showPreview() {
         panel?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
     }
     private func receive(_ image: CGImage) {
         guard gate.isOpen else { return }

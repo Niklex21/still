@@ -16,6 +16,7 @@ final class RegionSelector {
     let instructions: String
     var completed = false
     var selectedImage: CGImage?
+    var selectedProcessID: Int32?
     let minimumSize: CGFloat
     init(instructions: String = "Select scrolling content · Drag a region · Esc to cancel", minimumSize: CGFloat = 2, completion: @escaping (CGRect?) -> Void) { self.instructions = instructions; self.minimumSize = minimumSize; self.completion = completion }
     func start() {
@@ -35,6 +36,13 @@ final class RegionSelector {
         }
     }
     func present(screens: [NSScreen], backgrounds: [CGDirectDisplayID: CGImage]) {
+        let windows = (CGWindowListCopyWindowInfo([.optionOnScreenOnly,.excludeDesktopElements],kCGNullWindowID) as? [[String: Any]] ?? []).compactMap { info -> ScrollCaptureLayout.WindowTarget? in
+            guard let pid = info[kCGWindowOwnerPID as String] as? Int32,
+                  let layer = info[kCGWindowLayer as String] as? Int,
+                  let bounds = info[kCGWindowBounds as String] as? [String: Any],
+                  let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
+            return .init(processID: pid,frame: frame,layer: layer)
+        }
         for screen in screens {
             let panel = SelectionPanel(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             panel.onCancel = { [weak self] in self?.finish(nil) }
@@ -54,7 +62,9 @@ final class RegionSelector {
                     }
                     let global = local.offsetBy(dx: screen.frame.minX, dy: screen.frame.minY)
                     let mainTop = NSScreen.screens.first?.frame.maxY ?? 0
-                    self.finish(CGRect(x: global.minX, y: mainTop - global.maxY, width: global.width, height: global.height))
+                    let rect = CGRect(x: global.minX, y: mainTop - global.maxY, width: global.width, height: global.height)
+                    self.selectedProcessID = ScrollCaptureLayout.targetProcess(region: rect,windows: windows,ownProcess: ProcessInfo.processInfo.processIdentifier)
+                    self.finish(rect)
                 } else { self.finish(nil) }
             }
             panel.contentView = view; panels.append(panel); panel.makeKeyAndOrderFront(nil); panel.makeFirstResponder(view)

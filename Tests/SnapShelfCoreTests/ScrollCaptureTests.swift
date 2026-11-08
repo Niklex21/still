@@ -3,6 +3,15 @@ import Carbon
 @testable import SnapShelfCore
 
 final class ScrollCaptureTests: XCTestCase {
+    func testScrollingRestoresSelectedWindowInsteadOfMenuOwner() {
+        let frame = CGRect(x: 0,y: 30,width: 1200,height: 800)
+        let windows: [ScrollCaptureLayout.WindowTarget] = [.init(processID: 10,frame: frame),.init(processID: 20,frame: frame),.init(processID: 30,frame: frame)]
+        XCTAssertEqual(ScrollCaptureLayout.targetProcess(region: CGRect(x: 50,y: 120,width: 900,height: 600),windows: windows,ownProcess: 10),20)
+        let split: [ScrollCaptureLayout.WindowTarget] = [.init(processID: 40,frame: frame,layer: 25),.init(processID: 20,frame: CGRect(x: -1200,y: 30,width: 1200,height: 800)),.init(processID: 30,frame: frame)]
+        XCTAssertEqual(ScrollCaptureLayout.targetProcess(region: CGRect(x: -1000,y: 100,width: 600,height: 500),windows: split,ownProcess: 10),20)
+        XCTAssertEqual(ScrollCaptureLayout.targetProcess(region: CGRect(x: 200,y: 100,width: 600,height: 500),windows: split,ownProcess: 10),30)
+        XCTAssertNil(ScrollCaptureLayout.targetProcess(region: CGRect(x: 3000,y: 100,width: 600,height: 500),windows: split,ownProcess: 10))
+    }
     func testSidePreviewFitsOutsideSelectedAreaOnEitherSide() {
         let screen = CGRect(x: -1440,y: 0,width: 1440,height: 900)
         for region in [CGRect(x: -1380,y: 100,width: 700,height: 600),CGRect(x: -820,y: 100,width: 700,height: 600)] {

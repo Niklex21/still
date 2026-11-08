@@ -2,6 +2,17 @@ import Foundation
 import CoreGraphics
 
 public enum ScrollCaptureLayout {
+    public struct WindowTarget {
+        public let processID: Int32
+        public let frame: CGRect
+        public let layer: Int
+        public init(processID: Int32, frame: CGRect, layer: Int = 0) { self.processID = processID; self.frame = frame; self.layer = layer }
+    }
+    /// Input follows the compositor's front-to-back order, before selection UI.
+    public static func targetProcess(region: CGRect, windows: [WindowTarget], ownProcess: Int32) -> Int32? {
+        let point = CGPoint(x: region.midX,y: region.midY)
+        return windows.first { $0.processID != ownProcess && $0.layer == 0 && $0.frame.contains(point) }?.processID
+    }
     /// A side preview whenever room permits; otherwise a movable overlay that is
     /// excluded from the captured stream. Never resize/hide it for a frame.
     public static func previewFrame(region: CGRect, screen: CGRect) -> CGRect {
