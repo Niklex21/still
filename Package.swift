@@ -8,6 +8,6 @@ let package = Package(
     targets: [
         .target(name: "SnapShelfCore"),
         .executableTarget(name: "SnapShelf", dependencies: ["SnapShelfCore"]),
-        .testTarget(name: "SnapShelfCoreTests", dependencies: ["SnapShelfCore"])
+        .testTarget(name: "SnapShelfCoreTests", dependencies: ["SnapShelfCore"], resources: [.copy("Fixtures")])
     ]
 )

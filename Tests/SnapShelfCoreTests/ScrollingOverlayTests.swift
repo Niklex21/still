@@ -28,8 +28,8 @@ final class ScrollingOverlayTests: XCTestCase {
             pixels.replaceSubrange(i..<i+4,with: color)
         } }
     }
-    private func header(_ pixels: inout [UInt8]) {
-        fill(&pixels,x: 0..<width,y: 0..<24,color: [225,228,232,255])
+    private func header(_ pixels: inout [UInt8],height: Int = 24) {
+        fill(&pixels,x: 0..<width,y: 0..<height,color: [225,228,232,255])
         fill(&pixels,x: 18..<130,y: 8..<15,color: [30,35,40,255])
     }
     private func footer(_ pixels: inout [UInt8],offset: Int,buttonTop: Int) {
@@ -38,9 +38,9 @@ final class ScrollingOverlayTests: XCTestCase {
         // A rounded button's upper edge is especially visible in the reported trails.
         fill(&pixels,x: 98..<184,y: offset+buttonTop-3..<offset+buttonTop,color: [20,105,175,255])
     }
-    private func frame(_ page: [UInt8],at offset: Int,buttonTop: Int) -> CGImage {
+    private func frame(_ page: [UInt8],at offset: Int,buttonTop: Int,headerHeight: Int = 24) -> CGImage {
         var pixels = Array(page[offset*width*4..<(offset+viewport)*width*4])
-        header(&pixels); footer(&pixels,offset: 0,buttonTop: buttonTop)
+        header(&pixels,height: headerHeight); footer(&pixels,offset: 0,buttonTop: buttonTop)
         return image(pixels,height: viewport)
     }
     private func rgba(_ image: CGImage) -> Data {
@@ -51,17 +51,17 @@ final class ScrollingOverlayTests: XCTestCase {
         }
         return Data(pixels)
     }
-    private func verify(shifts: [Int],buttonTop: Int) throws {
+    private func verify(shifts: [Int],buttonTop: Int,headerHeight: Int = 24) throws {
         let page = page(height: viewport+shifts.reduce(0,+))
-        let stitcher = ScrollStitcher(first: frame(page,at: 0,buttonTop: buttonTop))
+        let stitcher = ScrollStitcher(first: frame(page,at: 0,buttonTop: buttonTop,headerHeight: headerHeight))
         var offset = 0
         for shift in shifts {
             offset += shift
-            XCTAssertTrue(try stitcher.append(frame(page,at: offset,buttonTop: buttonTop)))
+            XCTAssertTrue(try stitcher.append(frame(page,at: offset,buttonTop: buttonTop,headerHeight: headerHeight)))
             XCTAssertEqual(stitcher.lastShift,shift)
             XCTAssertEqual(stitcher.result.height,offset+viewport)
             var expected = Array(page.prefix((offset+viewport)*width*4))
-            header(&expected); footer(&expected,offset: offset,buttonTop: buttonTop)
+            header(&expected,height: headerHeight); footer(&expected,offset: offset,buttonTop: buttonTop)
             let actual = rgba(stitcher.result), reference = rgba(image(expected,height: offset+viewport))
             XCTAssertTrue(actual == reference,"Only the last viewport should retain its floating button/footer; every other pixel must match the unobstructed page, after shift \(shift)")
         }
@@ -74,5 +74,8 @@ final class ScrollingOverlayTests: XCTestCase {
     }
     func testLargeScrollStepPreservesHeaderAndOnlyOneBottomButton() throws {
         try verify(shifts: [430,449],buttonTop: 540)
+    }
+    func testTallStickyHeaderIsKeptOnlyOnce() throws {
+        try verify(shifts: [7,31,85,200,17],buttonTop: 520,headerHeight: 110)
     }
 }

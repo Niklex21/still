@@ -16,6 +16,8 @@ final class RegionSelector {
     let instructions: String
     var completed = false
     var selectedImage: CGImage?
+    var selectedProcessID: Int32?
+    var selectedWindowID: CGWindowID?
     let minimumSize: CGFloat
     init(instructions: String = "Select scrolling content · Drag a region · Esc to cancel", minimumSize: CGFloat = 2, completion: @escaping (CGRect?) -> Void) { self.instructions = instructions; self.minimumSize = minimumSize; self.completion = completion }
     func start() {
@@ -23,10 +25,11 @@ final class RegionSelector {
             let screens = NSScreen.screens
             var backgrounds: [CGDirectDisplayID: CGImage] = [:]
             if let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true) {
+                let ownApplications = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
                 for display in content.displays {
                     let scale = screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == display.displayID }?.backingScaleFactor ?? 1
                     let config = SCStreamConfiguration(); config.width = Int(CGFloat(display.width) * scale); config.height = Int(CGFloat(display.height) * scale); config.showsCursor = false
-                    let filter = SCContentFilter(display: display, excludingWindows: [])
+                    let filter = SCContentFilter(display: display, excludingApplications: ownApplications, exceptingWindows: [])
                     if let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) { backgrounds[display.displayID] = image }
                 }
             }
@@ -34,6 +37,13 @@ final class RegionSelector {
         }
     }
     func present(screens: [NSScreen], backgrounds: [CGDirectDisplayID: CGImage]) {
+        let windows = (CGWindowListCopyWindowInfo([.optionOnScreenOnly,.excludeDesktopElements],kCGNullWindowID) as? [[String: Any]] ?? []).compactMap { info -> ScrollCaptureLayout.WindowTarget? in
+            guard let pid = info[kCGWindowOwnerPID as String] as? Int32,
+                  let layer = info[kCGWindowLayer as String] as? Int,
+                  let bounds = info[kCGWindowBounds as String] as? [String: Any],
+                  let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
+            return .init(processID: pid,frame: frame,layer: layer,windowID: (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value ?? 0)
+        }
         for screen in screens {
             let panel = SelectionPanel(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             panel.onCancel = { [weak self] in self?.finish(nil) }
@@ -53,7 +63,11 @@ final class RegionSelector {
                     }
                     let global = local.offsetBy(dx: screen.frame.minX, dy: screen.frame.minY)
                     let mainTop = NSScreen.screens.first?.frame.maxY ?? 0
-                    self.finish(CGRect(x: global.minX, y: mainTop - global.maxY, width: global.width, height: global.height))
+                    let rect = CGRect(x: global.minX, y: mainTop - global.maxY, width: global.width, height: global.height)
+                    let target = ScrollCaptureLayout.targetWindow(region: rect,windows: windows,ownProcess: ProcessInfo.processInfo.processIdentifier)
+                    self.selectedProcessID = target?.processID
+                    if let target, target.windowID != 0, target.frame.contains(rect) { self.selectedWindowID = target.windowID }
+                    self.finish(rect)
                 } else { self.finish(nil) }
             }
             panel.contentView = view; panels.append(panel); panel.makeKeyAndOrderFront(nil); panel.makeFirstResponder(view)

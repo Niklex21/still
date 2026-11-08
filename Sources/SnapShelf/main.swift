@@ -497,13 +497,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         if mode == .region || mode == .scrolling {
             if repeatLast, let region = store.preferences.lastRegion, CaptureRegion.valid(region, within: captureScreens) { run(region: region); return }
             selection = RegionSelector(instructions: mode == .scrolling ? "Select scrolling content · Drag a region · Esc to cancel" : privateCapture ? "Private capture · Drag a region · Esc to cancel" : "Capture region · Drag to select · Esc to cancel", minimumSize: mode == .scrolling ? 120 : 2) { [weak self] region in
-                guard let self else { return }; let frozen = self.selection?.selectedImage; self.selection = nil
+                guard let self else { return }; let frozen = self.selection?.selectedImage, selectedProcess = self.selection?.selectedProcessID, selectedWindow = self.selection?.selectedWindowID; self.selection = nil
                 guard let region, CaptureRegion.valid(region, within: self.captureScreens) else { restore(); return }
                 let mainTop = NSScreen.screens.first?.frame.maxY ?? 0
                 if let display = NSScreen.screens.first(where: { CGRect(x: $0.frame.minX,y: mainTop-$0.frame.maxY,width: $0.frame.width,height: $0.frame.height).contains(CGPoint(x: region.midX,y: region.midY)) }) { metadata.pixelScale = Double(display.backingScaleFactor) }
                 if mode == .scrolling {
+                    // Restore the app actually under the selected region rather
+                    // than the app that happened to own the capture menu.
+                    if let selectedProcess, let app = NSRunningApplication(processIdentifier: selectedProcess) {
+                        app.activate(options: [])
+                        metadata.application = app.localizedName; metadata.bundleIdentifier = app.bundleIdentifier
+                        if selectedProcess != sourceApp?.processIdentifier { metadata.windowTitle = nil }
+                    }
                     self.capturing = false
-                    self.scrollSession = ScrollCapture(rect: region, store: self.store, metadata: metadata) {
+                    self.scrollSession = ScrollCapture(rect: region, store: self.store, metadata: metadata, sourceWindowID: selectedWindow) {
                         self.scrollSession = nil; self.pinnedWindows.values.forEach { $0.window?.orderFrontRegardless() }
                     }
                     self.scrollSession?.start()
