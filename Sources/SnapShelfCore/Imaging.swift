@@ -241,7 +241,9 @@ public final class ScrollStitcher {
                 if runs[x] >= 3 { supportedColumns += 1 }
                 if runs[x] >= 6 { longRun = true }
             }
-            if supportedColumns >= 2 || longRun { fixedEnd = y+8 }
+            // Include antialiased descenders and the rest of a glyph when only
+            // its taller strokes intersect the horizontally sampled columns.
+            if supportedColumns >= 2 || longRun { fixedEnd = y+24 }
         }
         let incomingStart = max(margin,stickyTopInset,fixedEnd)
         guard incomingStart+shift < h-30 else { throw Imaging.ImageError.noOverlap }
