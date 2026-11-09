@@ -50,6 +50,8 @@ The script verifies the code signature and DMG integrity, and writes a SHA-256 c
 4. For a notarized release, validate both stapled tickets and assess the app with Gatekeeper. Test a real browser download on a clean Mac before claiming a smooth first launch.
 5. Verify the bundle contains no local libraries, screenshots, signing material, or developer-specific paths.
 
+For local development updates, keep the bundle identifier, install path, and Apple Development signing identity consistent. The source installer checks a replacement against the previous development build’s designated requirement. Installing an ad-hoc public preview over that build changes its identity and can require granting Screen Recording again.
+
 The Intel slice can be cross-compiled on Apple Silicon, but building it is not proof that it has run on Intel hardware. State which hardware was actually tested.
 
 ## Publish on GitHub

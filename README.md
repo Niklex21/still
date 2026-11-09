@@ -64,7 +64,7 @@ In Finder, open `dist` and move **Still.app** to **Applications**, then launch i
 # STILL_INSTALL_DIR="$HOME/Applications" ./scripts/install.sh
 ```
 
-The installer builds locally, verifies the bundle, and installs it without launching it. Quit an existing Still process first. It does not download or run a prebuilt app, use sudo, or disable macOS security controls.
+The installer builds locally, verifies the bundle, and installs it without launching it. When replacing a local Apple Development build, it reuses the same identity and checks its signing requirement before swapping the app. Quit an existing Still process first. It does not download or run a prebuilt app, use sudo, or disable macOS security controls.
 
  Install at `/Applications/Still.app` if you want Raycast semantic search: the extension invokes the app's executable there.
 
