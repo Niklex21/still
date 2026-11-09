@@ -34,7 +34,7 @@ Screen recording enables screenshots; it is not continuously recorded. Accessibi
 
 **Check for Updates…** contacts GitHub for the Still release feed. Sparkle verifies the downloaded update with Still’s public signing key. Background update checks and system profiling default to off.
 
-Builds configured for a dedicated Still PostHog project offer **Share anonymous usage counts** in Quick Start and Settings → Privacy. The switch defaults to off. When enabled, Still sends a named event after adding, copying, dragging, or exporting an ordinary screenshot. The request contains a fresh random identifier for that event. The client requests no person profile or geolocation. A network recipient can see the connection IP. Disable IP capture in the Still project before distributing a configured build.
+Starting with build 10, official DMGs offer **Share usage counts** for the dedicated US Still PostHog project in Quick Start and Settings → Privacy. The switch defaults to off. When enabled, Still sends a named event after adding, copying, dragging, or exporting an ordinary screenshot. The request contains a fresh random identifier for that event. The client requests no person profile or geolocation. A network recipient can see the connection IP. Disable IP capture in the Still project before distributing a configured build.
 
 Private captures, image contents, OCR, descriptions, filenames, source apps, search queries, clipboard contents, and device identifiers are excluded. Turning the switch off stops future events. Offline events are discarded. Builds without a project token and region omit the switch.
 

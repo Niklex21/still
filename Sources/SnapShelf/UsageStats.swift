@@ -59,7 +59,7 @@ struct UsageConsent: View {
     @ObservedObject var usage: UsageStats
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Toggle("Share anonymous usage counts", isOn: Binding(get: { usage.enabled }, set: usage.setEnabled))
+            Toggle("Share usage counts", isOn: Binding(get: { usage.enabled }, set: usage.setEnabled))
             Text("Sends counts of adds, copies, drags, and exports to PostHog. Screenshots, text, and private captures stay out of these counts.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }

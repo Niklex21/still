@@ -481,7 +481,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
                 self?.guideWindow?.close()
                 self?.showSettings(shortcutsTab: true)
             }, done: { [weak self] in self?.guideWindow?.close() })
-            let window = NSWindow(contentViewController: NSHostingController(rootView: view))
+            let window = QuickStartWindow(contentViewController: NSHostingController(rootView: view))
             window.title = "Quick Start"
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false
