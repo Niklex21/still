@@ -50,6 +50,8 @@ The script verifies the code signature and DMG integrity, and writes a SHA-256 c
 4. For a notarized release, validate both stapled tickets and assess the app with Gatekeeper. Test a real browser download on a clean Mac before claiming a smooth first launch.
 5. Verify the bundle contains no local libraries, screenshots, signing material, or developer-specific paths.
 
+For local development updates, keep the bundle identifier, install path, and Apple Development signing identity consistent. The source installer checks a replacement against the previous development build’s designated requirement. Installing an ad-hoc public preview over that build changes its identity and can require granting Screen Recording again.
+
 The Intel slice can be cross-compiled on Apple Silicon, but building it is not proof that it has run on Intel hardware. State which hardware was actually tested.
 
 ## Publish on GitHub
@@ -75,6 +77,14 @@ gh release create "$tag" "$base.dmg" "$base.dmg.sha256" "$base-build.json" \
 
 ## Build from source instead
 
-People who prefer not to trust a prebuilt executable can clone the repository, inspect the native source and build scripts, then run `./scripts/install.sh` with Xcode 27 selected. `STILL_INSTALL_DIR` supports a user-local Applications directory. The script does not use sudo or launch the app. The optional Raycast integration has its own npm dependencies; the native Swift app has none.
+People who prefer not to trust a prebuilt executable can clone the repository, inspect the native source and build scripts, then run `./scripts/install.sh` with Xcode 27 selected. `STILL_INSTALL_DIR` supports a user-local Applications directory. The script does not use sudo or launch the app. The optional Raycast integration has its own npm dependencies; Swift Package Manager resolves the pinned Sparkle framework for the native app.
 
 Before publishing, record the source commit and actual check results in the release notes, attach the DMG checksum, and complete the [QA matrix](release-qa.md). Do not substitute a passing build for a first-launch/Gatekeeper test.
+
+## In-app updates
+
+Still uses Sparkle starting with bundle build 6. Preview 1 users install their first upgrade from the DMG. Each subsequent build needs a higher numeric bundle build. The menu-bar **Check for Updates…** action reads `docs/appcast.xml` on main. Only advertise published builds that contain the Still update public key. Preview users follow this feed, so promote each entry deliberately.
+
+After publishing the release, run `./scripts/update-feed.sh TAG` on the signing Mac. It downloads the public DMG and checksum, generates a signed feed entry using the dedicated **org.Niklex21.Still.updates** Keychain account, and verifies the signature before replacing the feed. Review the diff and commit it to main with the download-link update. On the previous updater-enabled build, choose **Check for Updates…**, install, and check the relaunched bundle version. Keep the private key in the signing account’s Keychain. Developer ID and notarization are separate from Sparkle signing.
+
+For builds that offer opt-in usage counts, set `STILL_USAGE_TOKEN` to the dedicated Still project's public ingestion token and `STILL_USAGE_REGION` to US or EU at build time. Disable IP capture in that project's settings first. Leave both variables unset for a build without remote statistics.

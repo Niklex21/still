@@ -7,8 +7,13 @@
 <key>CFBundleDisplayName</key><string>Still</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>1.1.0</string>
-<key>CFBundleVersion</key><string>5</string>
+<key>CFBundleVersion</key><string>7</string>
 <key>CFBundleIconFile</key><string>AppIcon.icns</string>
+<key>SUFeedURL</key><string>https://raw.githubusercontent.com/Niklex21/still/main/docs/appcast.xml</string>
+<key>SUPublicEDKey</key><string>BmxQ96vxcrFmBkymwRSJ3+Mjzd8wArRjxLTIfknksjc=</string>
+<key>SUEnableAutomaticChecks</key><false/>
+<key>SUAllowsAutomaticUpdates</key><false/>
+<key>SUSendProfileInfo</key><false/>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>

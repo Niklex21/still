@@ -1,0 +1,16 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Still</title>
+        <item>
+            <title>1.1.0</title>
+            <pubDate>Sun, 08 Nov 2026 21:17:04 -0800</pubDate>
+            <link>https://github.com/Niklex21/still</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/Niklex21/still/releases/tag/v1.1.0-preview.1</sparkle:fullReleaseNotesLink>
+            <sparkle:version>5</sparkle:version>
+            <sparkle:shortVersionString>1.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure sparkle:edSignature="8PGY5iPTFiRByf4fV5n0u622IXVk8UTD1rysfKvPqxf1bvCNNDCCQvZ9juWiA8FQeXBYdBPHf0nnGQxPfQugCQ==" url="https://github.com/Niklex21/still/releases/download/v1.1.0-preview.1/Still-1.1.0-preview.1-universal.dmg" length="5046682" type="application/octet-stream"/>
+        </item>
+    </channel>
+</rss>

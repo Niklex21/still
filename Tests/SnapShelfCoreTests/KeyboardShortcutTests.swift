@@ -37,9 +37,19 @@ final class KeyboardShortcutTests: XCTestCase {
         XCTAssertFalse(ShortcutAction.shelf.isHoverAction)
         old[.copyHovered] = nil
         let saved = try JSONDecoder().decode(ShortcutBindings.self, from: JSONEncoder().encode(old))
-        XCTAssertEqual(saved.version, 5)
+        XCTAssertEqual(saved.version, 6)
         XCTAssertNil(saved[.copyHovered])
         XCTAssertEqual(ShortcutAction.library.eventID, 6)
+    }
+    func testTrashShortcutPreservesExistingBindingsAndDisabledPresets() {
+        let shortcut = KeyboardShortcut(keyCode: 51, modifiers: UInt32(cmdKey | optionKey))
+        XCTAssertEqual(ShortcutBindings.defaults()[.trashHovered], shortcut)
+        var custom = ShortcutBindings(shortcuts: [ShortcutAction.editHovered.rawValue: shortcut])
+        custom.addTrashDefault()
+        XCTAssertNil(custom[.trashHovered])
+        var off = ShortcutBindings()
+        off.addTrashDefault()
+        XCTAssertTrue(off.shortcuts.isEmpty)
     }
     func testDuplicatesExcludeTheActionBeingEdited() throws {
         let settings = ShortcutBindings.defaults()

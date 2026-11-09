@@ -1,6 +1,6 @@
 # Privacy and data handling
 
-Still has no account, analytics SDK, cloud sync, or application server. Its Swift target has no third-party dependencies. OCR uses Apple Vision; semantic text retrieval uses NaturalLanguage; optional image descriptions use the on-device Apple Foundation Models framework on supported Macs. macOS may separately download its system models. Availability and description quality vary. Pause image analysis in Settings; existing descriptions remain local.
+Still has no account, analytics SDK, cloud sync, or application server. The app uses Sparkle for user-initiated software updates. OCR uses Apple Vision; semantic text retrieval uses NaturalLanguage; optional image descriptions use the on-device Apple Foundation Models framework on supported Macs. macOS may separately download its system models. Availability and description quality vary. Pause image analysis in Settings; existing descriptions remain local.
 
 ## Local files
 
@@ -28,3 +28,14 @@ Redaction writes opaque pixels into the rendered/exported image. Originals and e
 ## Permissions
 
 Screen recording enables screenshots; it is not continuously recorded. Accessibility enables automatic scrolling only; manual scroll stitching can be used without it. Launch at login is configurable and visible in macOS Login Items. Closing windows leaves menu-bar capture running; use **Quit Still** to stop it.
+
+
+## Updates and optional usage counts
+
+**Check for Updates…** contacts GitHub for the Still release feed. Sparkle verifies the downloaded update with Still’s public signing key. Background update checks and system profiling default to off.
+
+Builds configured for a dedicated Still PostHog project offer **Share anonymous usage counts** in Quick Start and Settings → Privacy. The switch defaults to off. When enabled, Still sends a named event after adding, copying, dragging, or exporting an ordinary screenshot. The request contains a fresh random identifier for that event. The client requests no person profile or geolocation. A network recipient can see the connection IP. Disable IP capture in the Still project before distributing a configured build.
+
+Private captures, image contents, OCR, descriptions, filenames, source apps, search queries, clipboard contents, and device identifiers are excluded. Turning the switch off stops future events. Offline events are discarded. Builds without a project token and region omit the switch.
+
+**Report a Bug…** opens a GitHub form with Still’s version, build, and macOS version. You can edit those fields and choose what to submit. No logs or images are attached automatically.

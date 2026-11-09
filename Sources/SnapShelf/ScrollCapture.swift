@@ -44,6 +44,7 @@ final class RegionSelector {
                   let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
             return .init(processID: pid,frame: frame,layer: layer,windowID: (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value ?? 0)
         }
+        NSApp.activate(ignoringOtherApps: true)
         for screen in screens {
             let panel = SelectionPanel(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             panel.onCancel = { [weak self] in self?.finish(nil) }
@@ -70,9 +71,10 @@ final class RegionSelector {
                     self.finish(rect)
                 } else { self.finish(nil) }
             }
+            panel.acceptsMouseMovedEvents = true
             panel.contentView = view; panels.append(panel); panel.makeKeyAndOrderFront(nil); panel.makeFirstResponder(view)
         }
-        NSCursor.crosshair.push(); NSApp.activate(ignoringOtherApps: true)
+        NSCursor.crosshair.push()
     }
     func finish(_ rect: CGRect?) {
         guard !completed else { return }; completed = true
@@ -89,23 +91,57 @@ final class SelectionView: NSView {
     var start: CGPoint?
     var end: CGPoint?
     override var acceptsFirstResponder: Bool { true }
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .crosshair) }
+    private var cursorTracking: NSTrackingArea?
+    override func resetCursorRects() { super.resetCursorRects(); addCursorRect(bounds, cursor: .crosshair) }
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let cursorTracking { removeTrackingArea(cursorTracking) }
+        let area = NSTrackingArea(rect: .zero, options: [.activeAlways, .inVisibleRect, .cursorUpdate, .mouseEnteredAndExited, .enabledDuringMouseDrag], owner: self)
+        addTrackingArea(area)
+        cursorTracking = area
+    }
+    override func cursorUpdate(with event: NSEvent) { NSCursor.crosshair.set() }
+    override func mouseEntered(with event: NSEvent) { NSCursor.crosshair.set() }
+
     override func draw(_ dirtyRect: NSRect) {
         backgroundImage?.draw(in: bounds)
         let shade = NSBezierPath(rect: bounds); shade.windingRule = .evenOdd
         if let start, let end {
             shade.appendRect(CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y)))
         }
-        NSColor.black.withAlphaComponent(0.25).setFill(); shade.fill()
-        let title = instructions
-        (title as NSString).draw(at: NSPoint(x: bounds.midX - 260, y: bounds.maxY - 90), withAttributes: [.font: NSFont.systemFont(ofSize: 17, weight: .semibold), .foregroundColor: NSColor.white])
+        NSColor.black.withAlphaComponent(0.18).setFill(); shade.fill()
+        if start == nil && !instructions.isEmpty {
+            let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.white]
+            let title = instructions as NSString
+            let size = title.size(withAttributes: attributes)
+            let badge = NSRect(x: bounds.midX - size.width / 2 - 8, y: bounds.maxY - 63, width: size.width + 16, height: size.height + 8)
+            NSColor.black.withAlphaComponent(0.65).setFill()
+            NSBezierPath(roundedRect: badge, xRadius: 6, yRadius: 6).fill()
+            title.draw(at: CGPoint(x: badge.minX + 8, y: badge.minY + 4), withAttributes: attributes)
+        }
         if let start, let end {
             let rect = CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))
-            NSColor.systemMint.setStroke(); let path = NSBezierPath(rect: rect); path.lineWidth = 2; path.stroke()
+            let pixel = 1 / (window?.backingScaleFactor ?? 1)
+            NSColor.black.withAlphaComponent(0.65).setStroke()
+            let outer = NSBezierPath(rect: rect.insetBy(dx: -pixel, dy: -pixel))
+            outer.lineWidth = pixel
+            outer.stroke()
+            NSColor.white.setStroke()
+            let inner = NSBezierPath(rect: rect)
+            inner.lineWidth = pixel
+            inner.stroke()
+            let scale = window?.backingScaleFactor ?? 1
+            let label = "\(Int(rect.integral.width * scale)) × \(Int(rect.integral.height * scale))" as NSString
+            let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor.white]
+            let size = label.size(withAttributes: attributes)
+            let badge = CGRect(x: min(max(3,end.x + 12),bounds.maxX - size.width - 15), y: min(max(3,end.y - size.height - 14),bounds.maxY - size.height - 8), width: size.width + 12, height: size.height + 6)
+            NSColor.black.withAlphaComponent(0.72).setFill()
+            NSBezierPath(roundedRect: badge, xRadius: 4, yRadius: 4).fill()
+            label.draw(at: CGPoint(x: badge.minX + 6, y: badge.minY + 3), withAttributes: attributes)
         }
     }
     override func mouseDown(with event: NSEvent) { start = convert(event.locationInWindow, from: nil); end = start; needsDisplay = true }
-    override func mouseDragged(with event: NSEvent) { end = convert(event.locationInWindow, from: nil); needsDisplay = true }
+    override func mouseDragged(with event: NSEvent) { NSCursor.crosshair.set(); end = convert(event.locationInWindow, from: nil); needsDisplay = true }
     override func mouseUp(with event: NSEvent) {
         guard let start else { return }; let end = convert(event.locationInWindow, from: nil)
         let rect = CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y)).integral

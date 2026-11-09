@@ -17,6 +17,9 @@ struct PrivacySettings: View {
                 Button("Clean Up Now") { store.cleanupExpiredCaptures() }.disabled(preferences.retentionDays == 0)
                 if !store.cleanupStatus.isEmpty { Text(store.cleanupStatus).font(.caption).foregroundStyle(.secondary) }
             }
+            if let usage = store.usage, usage.available {
+                Section("Usage statistics") { UsageConsent(usage: usage) }
+            }
             Section("Stored originals") {
                 Text("Redaction protects the rendered image you copy or export. Originals and editable bases remain in your local library until you move the capture to Trash.").font(.caption).foregroundStyle(.secondary)
             }
