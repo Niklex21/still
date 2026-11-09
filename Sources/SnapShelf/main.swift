@@ -252,7 +252,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         case .exportHovered: store.export(item)
         case .reviewHovered: store.markReviewed(id)
         case .trashHovered:
-            if item.isPrivate { store.consume(id) } else { store.delete(item) }
+            clearHoverTarget()
+            if item.isPrivate {
+                store.update(id) { $0.onShelf = false; $0.pinnedAt = nil }
+            } else {
+                store.delete(item, confirm: false)
+            }
         case .removeHovered:
             if hoverSource.hasPrefix("library:") || (hoverSource == "shelf" && shelfInteraction.manuallyOpened) {
                 store.delete(item)

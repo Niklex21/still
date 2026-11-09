@@ -24,7 +24,7 @@ public enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .exportHovered: return "Export / Resize…"
         case .reviewHovered: return "Mark as Viewed"
         case .removeHovered: return "Dismiss Preview / Delete in History"
-        case .trashHovered: return "Move Screenshot to Trash…"
+        case .trashHovered: return "Move Immediately to Trash"
         case .textHovered: return "Copy Recognized Text"
         case .revealHovered: return "Show in Finder"
         case .uploadHovered: return "Prepare for Upload"

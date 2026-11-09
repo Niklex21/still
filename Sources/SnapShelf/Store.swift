@@ -502,11 +502,15 @@ final class CaptureStore: ObservableObject {
             throw error
         }
     }
-    func delete(_ item: Capture) {
-        let alert = NSAlert(); alert.messageText = "Move this screenshot to the Trash?"
-        alert.informativeText = "The edited image and its original will be moved to the Trash."
-        alert.addButton(withTitle: "Move to Trash"); alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+    func delete(_ item: Capture, confirm: Bool = true) {
+        if confirm {
+            let alert = NSAlert()
+            alert.messageText = "Move this screenshot to the Trash?"
+            alert.informativeText = "The edited image and its original will be moved to the Trash."
+            alert.addButton(withTitle: "Move to Trash")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
         do { try trashCaptures([item.id]) } catch { self.error = error.localizedDescription }
     }
     deinit { maintenanceTimer?.invalidate() }

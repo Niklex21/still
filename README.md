@@ -93,7 +93,7 @@ Closing a window leaves the menu-bar app running. **⌘Q closes Still's windows*
 
 A new capture appears in the floating shelf. Up to three captures from the current batch have separate previews; older queued captures form an offset stack. Drag the shelf's empty space or expanded top bar to move it. Hover or click the older stack to expand it, or use the shelf shortcut.
 
-While hovering, **⌘Delete** dismisses the preview and keeps it in History. Starting with build 6, **⌥⌘Delete** asks to move an accidental capture to Trash. You can change both shortcuts in Settings.
+While hovering, **⌘Delete** dismisses the preview and keeps it in History. Starting with build 6, **⌥⌘Delete** immediately moves the hovered screenshot and its original to macOS Trash. You can change both shortcuts in Settings.
 
 Hovering a preview dims its image and reveals corner actions. Configure their positions, size, dimming, and date visibility in **Settings → Controls**.
 
