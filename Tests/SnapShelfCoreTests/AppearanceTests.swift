@@ -1,14 +1,26 @@
 import XCTest
+import Carbon
 import AppKit
 @testable import SnapShelfCore
 
 final class AppearanceTests: XCTestCase {
+    func testOptionActionsFollowRegisteredShortcuts() {
+        var keys = ShortcutBindings.defaults()
+        XCTAssertEqual(ScreenshotAction.dismiss.displayed(holdingOption: false, bindings: keys), .dismiss)
+        XCTAssertEqual(ScreenshotAction.dismiss.displayed(holdingOption: true, bindings: keys), .trash)
+        XCTAssertEqual(ScreenshotAction.copySharing.displayed(holdingOption: true, bindings: keys), .copy)
+        XCTAssertEqual(ScreenshotAction.pin.displayed(holdingOption: true, bindings: keys), .pin)
+        keys[.trashHovered] = nil
+        XCTAssertEqual(ScreenshotAction.dismiss.displayed(holdingOption: true, bindings: keys), .dismiss)
+        keys[.revealHovered] = KeyboardShortcut(keyCode: keys[.pinHovered]!.keyCode, modifiers: UInt32(cmdKey | optionKey))
+        XCTAssertEqual(ScreenshotAction.pin.displayed(holdingOption: true, bindings: keys), .reveal)
+    }
     func testCornerLayoutRoundTripAndDefaults() throws {
         var controls = HoverControls()
         XCTAssertEqual(controls[.topLeft], .dismiss)
         XCTAssertEqual(controls[.topRight], .pin)
         XCTAssertEqual(controls[.bottomLeft], .edit)
-        XCTAssertEqual(controls[.bottomRight], .copy)
+        XCTAssertEqual(controls[.bottomRight], .copySharing)
         controls[.topLeft] = .upload; controls[.bottomRight] = .save
         controls.buttonSize = 38; controls.hideDate = false
         XCTAssertEqual(try JSONDecoder().decode(HoverControls.self, from: JSONEncoder().encode(controls)), controls)

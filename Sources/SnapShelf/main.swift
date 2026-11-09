@@ -253,11 +253,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         case .reviewHovered: store.markReviewed(id)
         case .trashHovered:
             clearHoverTarget()
-            if item.isPrivate {
-                store.update(id) { $0.onShelf = false; $0.pinnedAt = nil }
-            } else {
-                store.delete(item, confirm: false)
-            }
+            performScreenshotAction(.trash, item: item, interaction: nil, pinned: item.isPinned)
         case .removeHovered:
             if hoverSource.hasPrefix("library:") || (hoverSource == "shelf" && shelfInteraction.manuallyOpened) {
                 store.delete(item)
@@ -275,6 +271,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
     func performScreenshotAction(_ action: ScreenshotAction, item: Capture, interaction: ShelfInteraction?, pinned: Bool, inHistory: Bool = false) {
         switch action {
         case .none: break
+        case .trash:
+            if item.isPrivate { store.update(item.id) { $0.onShelf = false; $0.pinnedAt = nil } }
+            else { store.delete(item, confirm: false) }
         case .dismiss:
             if inHistory { store.delete(item) }
             else if pinned && item.isPinned { store.togglePin(item.id) } else { store.consume(item.id) }

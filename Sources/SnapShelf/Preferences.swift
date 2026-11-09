@@ -74,6 +74,7 @@ struct HoverControlsSettings: View {
                 }
             }
             Section("On hover") {
+                Text("Hold Option over a screenshot to see alternate actions and their shortcuts.").font(.caption).foregroundStyle(.secondary)
                 Slider(value: $preferences.controls.buttonSize, in: 28...40, step: 2) { Text("Button size") }
                 Slider(value: $preferences.controls.dimming, in: 0.1...0.6) { Text("Dim screenshot") }
                 Toggle("Hide date", isOn: $preferences.controls.hideDate)

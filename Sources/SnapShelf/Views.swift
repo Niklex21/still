@@ -1,3 +1,4 @@
+import Carbon
 import SwiftUI
 import SnapShelfCore
 
@@ -385,7 +386,7 @@ struct ShelfThumbnail: View {
         .background(ShelfHoverArea { interaction.pointer(over: item.id, inside: $0) })
         .onDisappear { interaction.pointer(over: item.id, inside: false) }
         .contextMenu {
-            ForEach(ScreenshotAction.allCases.filter { $0 != .none && $0 != .history }) { action in
+            ForEach(ScreenshotAction.allCases.filter { $0 != .none && $0 != .history && $0 != .trash }) { action in
                 Button(actionLabel(action, item: item, inHistory: interaction.manuallyOpened && !pinned), role: action == .dismiss && interaction.manuallyOpened && !pinned ? .destructive : nil) {
                     AppDelegate.shared?.performScreenshotAction(action, item: item, interaction: interaction, pinned: pinned, inHistory: interaction.manuallyOpened && !pinned)
                 }
@@ -411,7 +412,7 @@ func actionLabel(_ action: ScreenshotAction, item: Capture, inHistory: Bool = fa
     return title + (key.map { " · " + $0 } ?? "")
 }
 
-private struct ScreenshotActionOverlay: View {
+struct ScreenshotActionOverlay: View {
     @ObservedObject var store: CaptureStore
     @ObservedObject private var preferences: CapturePreferences
     let item: Capture
@@ -419,18 +420,35 @@ private struct ScreenshotActionOverlay: View {
     let interaction: ShelfInteraction?
     let pinned: Bool
     let inHistory: Bool
+    @State private var optionHeld = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var bindings: ShortcutBindings { AppDelegate.shared?.shortcuts.bindings ?? .defaults() }
+
     init(store: CaptureStore, item: Capture, hover: Bool, interaction: ShelfInteraction?, pinned: Bool, inHistory: Bool = false) {
         self.store = store; self.preferences = store.preferences; self.item = item; self.hover = hover
         self.interaction = interaction; self.pinned = pinned; self.inHistory = inHistory
     }
     var body: some View {
+        presentation(optionHeld: optionHeld)
+        .task(id: hover) {
+            guard hover else { optionHeld = false; return }
+            // The shelf is nonactivating. Global modifier state also works over other apps
+            // without an Input Monitoring permission request.
+            while !Task.isCancelled {
+                let held = NSEvent.modifierFlags.contains(.option)
+                if held != optionHeld { optionHeld = held }
+                do { try await Task.sleep(for: .milliseconds(35)) } catch { return }
+            }
+        }
+    }
+    func presentation(optionHeld: Bool) -> some View {
         ZStack {
             Color.black.opacity(hover ? preferences.controls.dimming : 0).allowsHitTesting(false)
             if hover {
                 ForEach(ActionCorner.allCases) { corner in
-                    let action = preferences.controls[corner]
-                    if action != .none {
-                        actionButton(action, size: preferences.controls.buttonSize)
+                    let base = preferences.controls[corner]
+                    if base != .none {
+                        actionButton(base, size: preferences.controls.buttonSize, optionHeld: optionHeld)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment(corner)).padding(6)
                     }
                 }
@@ -440,15 +458,23 @@ private struct ScreenshotActionOverlay: View {
     func alignment(_ corner: ActionCorner) -> Alignment {
         switch corner { case .topLeft: return .topLeading; case .topRight: return .topTrailing; case .bottomLeft: return .bottomLeading; case .bottomRight: return .bottomTrailing }
     }
-    func actionButton(_ action: ScreenshotAction, size: Double) -> some View {
-        Button(role: action == .dismiss && inHistory ? .destructive : nil) {
-            AppDelegate.shared?.performScreenshotAction(action, item: item, interaction: interaction, pinned: pinned, inHistory: inHistory)
+    func actionButton(_ base: ScreenshotAction, size: Double, optionHeld: Bool) -> some View {
+        let action = base.displayed(holdingOption: optionHeld, bindings: bindings)
+        let key = action.shortcutAction.flatMap { bindings[$0] }
+        return Button(role: action == .trash || (action == .dismiss && inHistory) ? .destructive : nil) {
+            let clicked = base.displayed(holdingOption: NSEvent.modifierFlags.contains(.option), bindings: bindings)
+            AppDelegate.shared?.performScreenshotAction(clicked, item: item, interaction: interaction, pinned: pinned, inHistory: inHistory)
         } label: {
-            Group {
+            VStack(spacing: 1) {
                 if action == .copySharing && store.sharingJobs.contains(item.id) { ProgressView().controlSize(.small) }
                 else { Image(systemName: action == .dismiss && inHistory ? "trash" : action == .pin && item.isPinned ? "pin.slash" : action.symbol) }
-            }.font(.system(size: size < 28 ? 11 : 14, weight: .semibold)).foregroundStyle(.primary)
+                if let key, !optionHeld || key.modifiers & UInt32(optionKey) != 0 {
+                    Text(key.displayName).font(.system(size: 9, weight: .medium)).lineLimit(1).minimumScaleFactor(0.7)
+                }
+            }.font(.system(size: size < 28 ? 11 : 13, weight: .semibold))
+                .foregroundStyle(action == .trash ? Color.red : Color.primary)
                 .frame(width: size, height: size)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.09), value: action)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 9))
         }.buttonStyle(.plain).disabled(action == .copySharing && store.sharingJobs.contains(item.id))
             .help(actionLabel(action, item: item, inHistory: inHistory)).accessibilityLabel(actionLabel(action, item: item, inHistory: inHistory))

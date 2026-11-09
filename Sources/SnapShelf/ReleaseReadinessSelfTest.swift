@@ -131,6 +131,12 @@ enum ReleaseReadinessSelfTest {
         let report = URLComponents(url: StillSupport.bugReport, resolvingAgainstBaseURL: false)!
         try expect(report.host == "github.com" && report.path == "/Niklex21/still/issues/new" && Set(report.queryItems!.map(\.name)) == ["template", "version"], "Bug reporting opens an editable version-only form")
         try snapshot("quick-start", GettingStarted(shortcuts: GlobalShortcutManager(defaults: defaults), usage: testStats, settings: {}, done: {}), CGSize(width: 420, height: 380))
+        let hoverOverlay = ScreenshotActionOverlay(store: store, item: a, hover: true, interaction: nil, pinned: false)
+        for held in [false, true] {
+            let name = held ? "hover-option" : "hover-normal"
+            try snapshot(name, hoverOverlay.presentation(optionHeld: held), CGSize(width: 152, height: 108))
+        }
+        try expect(Data(contentsOf: output.appendingPathComponent("hover-normal.png")) != Data(contentsOf: output.appendingPathComponent("hover-option.png")), "Holding Option changes the rendered hover controls")
         try snapshot("library",LibraryView(store: store),CGSize(width: 1080,height: 720))
         try snapshot("editor",EditorView(model: editor.model, item: a, store: store, controller: editor),CGSize(width: 1000,height: 700))
         try snapshot("export",ExportView(item: a,store: store),CGSize(width: 470,height: 510))
