@@ -83,7 +83,7 @@ Keep the same identity across rebuilds where possible. A changed signature can c
 3. Open **Settings → Shortcuts** to choose your keys. If another app owns a shortcut, release it there first; Still reports registration conflicts.
 4. Review **Launch at login** in Settings. Still attempts to enable it on its first normal launch.
 
-In builds after 1.1 preview 1, **Help → Quick Start** shows the active shortcuts. **Help → Report a Bug…** opens an editable GitHub issue with the app and macOS versions. **Check for Updates…** looks for signed Still releases and offers to install an available update.
+In build 10, **Quick Start** appears the first time you open Still. Press **Done**, Return, or Esc to dismiss it. Reopen it anytime in **Help → Quick Start** to see your active shortcuts. **Help → Report a Bug…** opens an editable GitHub issue with the app and macOS versions. **Check for Updates…** looks for signed Still releases and offers to install an available update.
 
 Closing a window leaves the menu-bar app running. **⌘Q closes Still's windows**; **Quit Still** in its menu stops the app and its shortcuts. A login launch starts in the background.
 

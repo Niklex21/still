@@ -48,6 +48,7 @@ struct GettingStarted: View {
                 Button("Done", action: done).keyboardShortcut(.defaultAction)
             }
         }.padding(24).frame(width: 420)
+            .onExitCommand(perform: done)
     }
 
     private func row(_ symbol: String, _ title: String, _ detail: String, _ action: ShortcutAction) -> some View {
