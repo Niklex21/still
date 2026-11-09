@@ -9,9 +9,11 @@ final class AppearanceTests: XCTestCase {
         XCTAssertEqual(ScreenshotAction.dismiss.displayed(holdingOption: false, bindings: keys), .dismiss)
         XCTAssertEqual(ScreenshotAction.dismiss.displayed(holdingOption: true, bindings: keys), .trash)
         XCTAssertEqual(ScreenshotAction.copySharing.displayed(holdingOption: true, bindings: keys), .copy)
-        XCTAssertEqual(ScreenshotAction.pin.displayed(holdingOption: true, bindings: keys), .pin)
+        XCTAssertEqual(ScreenshotAction.pin.displayed(holdingOption: true, bindings: keys), .upload)
+        XCTAssertEqual(ScreenshotAction.edit.displayed(holdingOption: true, bindings: keys), .copyText)
         keys[.trashHovered] = nil
         XCTAssertEqual(ScreenshotAction.dismiss.displayed(holdingOption: true, bindings: keys), .dismiss)
+        keys[.uploadHovered] = nil
         keys[.revealHovered] = KeyboardShortcut(keyCode: keys[.pinHovered]!.keyCode, modifiers: UInt32(cmdKey | optionKey))
         XCTAssertEqual(ScreenshotAction.pin.displayed(holdingOption: true, bindings: keys), .reveal)
     }

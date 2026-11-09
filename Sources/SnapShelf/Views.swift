@@ -407,7 +407,7 @@ struct ShelfThumbnail: View {
 }
 
 func actionLabel(_ action: ScreenshotAction, item: Capture, inHistory: Bool = false) -> String {
-    let title = action == .dismiss && inHistory ? "Delete…" : action == .pin && item.isPinned ? "Unpin from Screen" : action.title
+    let title = action == .dismiss && inHistory ? "Move to Trash…" : action == .pin && item.isPinned ? "Unpin from Screen" : action.title
     let key = action.shortcutAction.flatMap { AppDelegate.shared?.shortcuts.bindings[$0]?.displayName }
     return title + (key.map { " · " + $0 } ?? "")
 }
