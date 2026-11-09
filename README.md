@@ -9,9 +9,9 @@ Still is a native menu-bar app built with Swift, AppKit, and SwiftUI. It keeps a
 
 ## Download
 
-**[Download Still 1.1 Preview for Mac (.dmg)](https://github.com/Niklex21/still/releases/download/v1.1.0-preview.1/Still-1.1.0-preview.1-universal.dmg)** · [Release notes](https://github.com/Niklex21/still/releases/tag/v1.1.0-preview.1)
+**[Download Still 1.1 Preview 2 for Mac (.dmg)](https://github.com/Niklex21/still/releases/download/v1.1.0-preview.2/Still-1.1.0-preview.2-universal.dmg)** · [Release notes](https://github.com/Niklex21/still/releases/tag/v1.1.0-preview.2)
 
-Open the DMG, drag **Still** into **Applications**, then launch it. The app is self-contained; no developer tools or Node.js are needed. The universal download includes Apple Silicon and Intel code.
+Open the DMG, drag **Still** into **Applications**, then launch it. The app is self-contained; no developer tools or Node.js are needed. The universal download includes Apple Silicon and Intel code. If you use Preview 1, install this update from the DMG. Preview 2 includes **Check for Updates…** for future releases.
 
 **First launch on macOS.** This preview is ad-hoc signed and unnotarized. If macOS shows “Still Not Opened,” click **Done**. If you trust this download, open **System Settings → Privacy & Security → Open Anyway** and confirm. On your first capture, allow **Still** under **Screen & System Audio Recording**, then reopen it if prompted. [Apple’s guide to opening downloaded apps](https://support.apple.com/en-us/102445)
 
@@ -49,7 +49,7 @@ The app checks model availability at runtime. Capture, annotation, history, OCR,
 To build the published preview from source, clone its release tag and build locally.
 
 ```sh
-git clone --branch v1.1.0-preview.1 https://github.com/Niklex21/still.git
+git clone --branch v1.1.0-preview.2 https://github.com/Niklex21/still.git
 cd still
 ./scripts/build.sh
 ```

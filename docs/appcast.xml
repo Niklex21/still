@@ -4,6 +4,15 @@
         <title>Still</title>
         <item>
             <title>1.1.0</title>
+            <pubDate>Mon, 09 Nov 2026 13:21:25 -0800</pubDate>
+            <sparkle:fullReleaseNotesLink>https://github.com/Niklex21/still/releases/tag/v1.1.0-preview.2</sparkle:fullReleaseNotesLink>
+            <sparkle:version>10</sparkle:version>
+            <sparkle:shortVersionString>1.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/Niklex21/still/releases/download/v1.1.0-preview.2/Still-1.1.0-preview.2-universal.dmg" length="6063204" type="application/octet-stream" sparkle:edSignature="Vh5pkPfK1NeCbCZ78VSgzQkDiE7Cnl/NDrtZ2cV2jlsSBdIY/6pHjx1oiCQvq4JjEj3pOruA339JV5EJg28bCw=="/>
+        </item>
+        <item>
+            <title>1.1.0</title>
             <pubDate>Sun, 08 Nov 2026 21:17:04 -0800</pubDate>
             <link>https://github.com/Niklex21/still</link>
             <sparkle:fullReleaseNotesLink>https://github.com/Niklex21/still/releases/tag/v1.1.0-preview.1</sparkle:fullReleaseNotesLink>
