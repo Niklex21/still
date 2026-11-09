@@ -4,7 +4,7 @@ import Carbon
 public enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     case region, window, screen, scrolling, shelf, library
     case copyHovered, editHovered, pinHovered, exportHovered, reviewHovered, removeHovered, textHovered, revealHovered, uploadHovered, descriptionHovered
-    case repeatRegion, delayedRegion, privateRegion, copySharingHovered
+    case repeatRegion, delayedRegion, privateRegion, copySharingHovered, trashHovered
     public var id: String { rawValue }
     public var title: String {
         switch self {
@@ -23,7 +23,8 @@ public enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .pinHovered: return "Pin / Unpin to Screen"
         case .exportHovered: return "Export / Resize…"
         case .reviewHovered: return "Mark as Viewed"
-        case .removeHovered: return "Remove from Queue"
+        case .removeHovered: return "Dismiss Preview / Delete in History"
+        case .trashHovered: return "Move Screenshot to Trash…"
         case .textHovered: return "Copy Recognized Text"
         case .revealHovered: return "Show in Finder"
         case .uploadHovered: return "Prepare for Upload"
@@ -49,7 +50,7 @@ public struct KeyboardShortcut: Codable, Equatable {
 }
 
 public struct ShortcutBindings: Codable, Equatable {
-    public var version: Int? = 5
+    public var version: Int? = 6
     public var shortcuts: [String: KeyboardShortcut]
     public init(shortcuts: [String: KeyboardShortcut] = [:]) { self.shortcuts = shortcuts }
     public subscript(_ action: ShortcutAction) -> KeyboardShortcut? {
@@ -76,6 +77,7 @@ public struct ShortcutBindings: Codable, Equatable {
         addUploadDefault()
         addDescriptionDefault()
         addSharingCopyDefault()
+        addTrashDefault()
     }
     public mutating func addUploadDefault() {
         let shortcut = KeyboardShortcut(keyCode: 32, modifiers: UInt32(cmdKey))
@@ -97,6 +99,13 @@ public struct ShortcutBindings: Codable, Equatable {
             self[.copyHovered] = original
         }
         if conflict(for: copy, excluding: .copySharingHovered) == nil { self[.copySharingHovered] = copy }
+    }
+    public mutating func addTrashDefault() {
+        defer { version = max(version ?? 1, 6) }
+        let shortcut = KeyboardShortcut(keyCode: 51, modifiers: UInt32(cmdKey | optionKey))
+        if !shortcuts.isEmpty, self[.trashHovered] == nil, conflict(for: shortcut, excluding: .trashHovered) == nil {
+            self[.trashHovered] = shortcut
+        }
     }
     public func conflict(for shortcut: KeyboardShortcut, excluding action: ShortcutAction) -> ShortcutAction? {
         ShortcutAction.allCases.first { $0 != action && self[$0] == shortcut }

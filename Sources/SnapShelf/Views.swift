@@ -391,6 +391,10 @@ struct ShelfThumbnail: View {
                 }
                     .disabled(action == .copyText && item.text.isEmpty)
             }
+            if !interaction.manuallyOpened && !item.isPrivate {
+                Divider()
+                Button("Move to Trash…", role: .destructive) { store.delete(item) }
+            }
             Button("History") { AppDelegate.shared?.showShelf() }
         }
         .accessibilityElement(children: .contain).accessibilityLabel("\(item.title), \(timestamp)")

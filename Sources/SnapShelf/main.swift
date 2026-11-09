@@ -251,6 +251,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         case .pinHovered: store.togglePin(id)
         case .exportHovered: store.export(item)
         case .reviewHovered: store.markReviewed(id)
+        case .trashHovered:
+            if item.isPrivate { store.consume(id) } else { store.delete(item) }
         case .removeHovered:
             if hoverSource.hasPrefix("library:") || (hoverSource == "shelf" && shelfInteraction.manuallyOpened) {
                 store.delete(item)
@@ -550,7 +552,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         }
         if mode == .region || mode == .scrolling {
             if repeatLast, let region = store.preferences.lastRegion, CaptureRegion.valid(region, within: captureScreens) { run(region: region); return }
-            selection = RegionSelector(instructions: mode == .scrolling ? "Select scrolling content · Drag a region · Esc to cancel" : privateCapture ? "Private capture · Drag a region · Esc to cancel" : "Capture region · Drag to select · Esc to cancel", minimumSize: mode == .scrolling ? 120 : 2) { [weak self] region in
+            selection = RegionSelector(instructions: mode == .scrolling ? "Select scrolling content" : privateCapture ? "Private capture" : "", minimumSize: mode == .scrolling ? 120 : 2) { [weak self] region in
                 guard let self else { return }; let frozen = self.selection?.selectedImage, selectedProcess = self.selection?.selectedProcessID, selectedWindow = self.selection?.selectedWindowID; self.selection = nil
                 guard let region, CaptureRegion.valid(region, within: self.captureScreens) else { restore(); return }
                 let mainTop = NSScreen.screens.first?.frame.maxY ?? 0
