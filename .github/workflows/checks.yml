@@ -23,6 +23,13 @@ jobs:
           xcodebuild -version
           swift --version
           test "$(xcrun --sdk macosx --show-sdk-version | cut -d. -f1)" -ge 27
+      - name: Resolve pinned Swift dependencies
+        run: |
+          for attempt in 1 2 3; do
+            if swift package --disable-sandbox --cache-path .build/cache resolve; then exit 0; fi
+            if [[ "$attempt" -lt 3 ]]; then sleep "$((attempt * 2))"; fi
+          done
+          exit 1
       - name: Unit and native workflow tests
         env:
           CLANG_MODULE_CACHE_PATH: ${{ github.workspace }}/.build/module-cache
