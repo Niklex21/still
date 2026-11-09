@@ -17,6 +17,17 @@ enum StillSupport {
     }
 }
 
+final class QuickStartWindow: NSWindow {
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, event.keyCode == 53,
+           event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty {
+            performClose(nil)
+            return
+        }
+        super.sendEvent(event)
+    }
+}
+
 struct GettingStarted: View {
     @ObservedObject var shortcuts: GlobalShortcutManager
     @ObservedObject var usage: UsageStats

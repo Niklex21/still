@@ -131,6 +131,18 @@ enum ReleaseReadinessSelfTest {
         let report = URLComponents(url: StillSupport.bugReport, resolvingAgainstBaseURL: false)!
         try expect(report.host == "github.com" && report.path == "/Niklex21/still/issues/new" && Set(report.queryItems!.map(\.name)) == ["template", "version"], "Bug reporting opens an editable version-only form")
         try snapshot("quick-start", GettingStarted(shortcuts: GlobalShortcutManager(defaults: defaults), usage: testStats, settings: {}, done: {}), CGSize(width: 420, height: 380))
+        let guide = QuickStartWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 380),
+                                     styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        guide.isReleasedWhenClosed = false
+        var closed = false
+        let observer = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: guide,
+                                                               queue: nil) { _ in closed = true }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        let escape = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                      windowNumber: guide.windowNumber, context: nil, characters: "\u{1b}",
+                                      charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53)!
+        guide.sendEvent(escape)
+        try expect(closed, "Escape closes Quick Start regardless of which control has focus")
         let hoverOverlay = ScreenshotActionOverlay(store: store, item: a, hover: true, interaction: nil, pinned: false)
         for held in [false, true] {
             let name = held ? "hover-option" : "hover-normal"

@@ -97,13 +97,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
                 store.error = "Could not enable launch at login: \(error.localizedDescription). You can try again in Settings."
             }
         }
-        if !demo && !loginLaunch && testRoot == nil && !CommandLine.arguments.contains("--background")
-            && !UserDefaults.standard.bool(forKey: "didShowGuide.v1") && store.history.isEmpty {
-            showGuide()
+        if demo {
+            seedDemo()
+            showLibrary()
+            showShelf(manuallyOpened: false)
+        } else if !loginLaunch && !CommandLine.arguments.contains("--background") {
+            if !showFirstGuideIfNeeded() && !store.shelf.isEmpty { showShelf(manuallyOpened: false) }
         }
-        if demo { seedDemo() }
-        if demo { showLibrary(); showShelf(manuallyOpened: false) }
-        else if !loginLaunch && !ProcessInfo.processInfo.arguments.contains("--background") && store.shelf.count > 0 { showShelf(manuallyOpened: false) }
     }
     func applicationWillTerminate(_ notification: Notification) {
         scrollSession?.cancel()
@@ -113,7 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { showLibrary() }
+        if !showFirstGuideIfNeeded() && !flag { showLibrary() }
         return true
     }
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -468,13 +468,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
     }
     @objc func reportBug() { NSWorkspace.shared.open(StillSupport.bugReport) }
 
+    private func showFirstGuideIfNeeded() -> Bool {
+        guard !demo, ProcessInfo.processInfo.environment["STILL_DATA_DIR"] == nil,
+              !UserDefaults.standard.bool(forKey: "didShowGuide.v1") else { return false }
+        showGuide()
+        return true
+    }
+
     @objc func showGuide() {
         if guideWindow == nil {
             let view = GettingStarted(shortcuts: shortcuts, usage: usage, settings: { [weak self] in
                 self?.guideWindow?.close()
                 self?.showSettings(shortcutsTab: true)
             }, done: { [weak self] in self?.guideWindow?.close() })
-            let window = NSWindow(contentViewController: NSHostingController(rootView: view))
+            let window = QuickStartWindow(contentViewController: NSHostingController(rootView: view))
             window.title = "Quick Start"
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false

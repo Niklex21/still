@@ -7,6 +7,11 @@ if [[ -n "${STILL_NOTARY_PROFILE:-}" && "${STILL_SIGNING_IDENTITY:-}" != "Develo
   echo 'Notarization requires STILL_SIGNING_IDENTITY to name a Developer ID Application certificate.' >&2
   exit 1
 fi
+# Official disk images offer opt-in counts; plain source installs omit the integration.
+if [[ -z "${STILL_USAGE_TOKEN+x}" && -z "${STILL_USAGE_REGION+x}" ]]; then
+  source Resources/release-usage.env
+  export STILL_USAGE_TOKEN STILL_USAGE_REGION
+fi
 export STILL_ARCHS="${STILL_ARCHS:-arm64 x86_64}"
 ./scripts/build.sh
 app="$PWD/dist/Still.app"
