@@ -1,7 +1,8 @@
 import Foundation
+import Carbon
 
 public enum ScreenshotAction: String, Codable, CaseIterable, Identifiable {
-    case none, dismiss, pin, edit, copy, save, upload, copyText, reveal, history, description, copySharing
+    case none, dismiss, pin, edit, copy, save, upload, copyText, reveal, history, description, copySharing, trash
     public var id: String { rawValue }
     public var title: String {
         switch self {
@@ -10,7 +11,8 @@ public enum ScreenshotAction: String, Codable, CaseIterable, Identifiable {
         case .pin: return "Pin to Screen"
         case .edit: return "Annotate"
         case .copySharing: return "Copy for Sharing"
-        case .copy: return "Copy Image"
+        case .copy: return "Copy Full-Size Image"
+        case .trash: return "Move Immediately to Trash"
         case .save: return "Export / Resize…"
         case .upload: return "Prepare for Upload"
         case .copyText: return "Copy Text"
@@ -22,6 +24,7 @@ public enum ScreenshotAction: String, Codable, CaseIterable, Identifiable {
     public var symbol: String {
         switch self {
         case .none: return "minus"
+        case .trash: return "trash"
         case .dismiss: return "xmark"
         case .pin: return "pin"
         case .edit: return "pencil"
@@ -35,8 +38,19 @@ public enum ScreenshotAction: String, Codable, CaseIterable, Identifiable {
         case .description: return "info.circle"
         }
     }
+    /// A corner follows the same Option-modified chord that the global shortcut manager dispatches.
+    public func displayed(holdingOption: Bool, bindings: ShortcutBindings) -> ScreenshotAction {
+        guard holdingOption, let shortcutAction, let base = bindings[shortcutAction],
+              base.modifiers & UInt32(optionKey) == 0 else { return self }
+        let alternate = KeyboardShortcut(keyCode: base.keyCode, modifiers: base.modifiers | UInt32(optionKey))
+        return Self.allCases.first { candidate in
+            candidate.shortcutAction.map { bindings[$0] == alternate } ?? false
+        } ?? self
+    }
+
     public var shortcutAction: ShortcutAction? {
         switch self {
+        case .trash: return .trashHovered
         case .dismiss: return .removeHovered
         case .pin: return .pinHovered
         case .edit: return .editHovered
@@ -69,7 +83,7 @@ public struct HoverControls: Codable, Equatable {
     public var topLeft: ScreenshotAction = .dismiss
     public var topRight: ScreenshotAction = .pin
     public var bottomLeft: ScreenshotAction = .edit
-    public var bottomRight: ScreenshotAction = .copy
+    public var bottomRight: ScreenshotAction = .copySharing
     public var buttonSize: Double = 32
     public var dimming: Double = 0.30
     public var hideDate: Bool = true

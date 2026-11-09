@@ -18,7 +18,7 @@ public enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .scrolling: return "Capture Scrolling Region"
         case .shelf: return "Toggle Shelf"
         case .library: return "Search Library"
-        case .copyHovered: return "Copy Image"
+        case .copyHovered: return "Copy Full-Size Image"
         case .editHovered: return "Annotate"
         case .pinHovered: return "Pin / Unpin to Screen"
         case .exportHovered: return "Export / Resize…"

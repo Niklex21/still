@@ -95,6 +95,8 @@ A new capture appears in the floating shelf. Up to three captures from the curre
 
 While hovering, **⌘Delete** dismisses the preview and keeps it in History. Starting with build 7, **⌥⌘Delete** immediately moves the hovered screenshot and its original to macOS Trash. You can change both shortcuts in Settings.
 
+Build 8 shows shortcut hints on the hover buttons. Hold **Option** to see matching alternate actions, then click the button or press its displayed shortcut. Dismiss becomes Trash and Copy for Sharing becomes Copy Full-Size Image with the default bindings. Release Option to switch back.
+
 Hovering a preview dims its image and reveals corner actions. Configure their positions, size, dimming, and date visibility in **Settings → Controls**.
 
 - A successful drag into another app removes the image from the queue and keeps it in History. A canceled drag keeps it queued.
