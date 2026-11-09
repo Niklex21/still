@@ -13,7 +13,7 @@ Still is a native menu-bar app built with Swift, AppKit, and SwiftUI. It keeps a
 
 Open the DMG, drag **Still** into **Applications**, then launch it. The app is self-contained; no developer tools or Node.js are needed. The universal download includes Apple Silicon and Intel code.
 
-**Preview:** the download is ad-hoc signed and **not notarized**. macOS may block opening it because the developer cannot be verified; [Apple explains the available security controls](https://support.apple.com/en-us/102445). A Developer ID-signed, notarized release is the next distribution step. Source builds remain available below.
+**First launch on macOS.** This preview is ad-hoc signed and unnotarized. If macOS shows “Still Not Opened,” click **Done**. If you trust this download, open **System Settings → Privacy & Security → Open Anyway** and confirm. On your first capture, allow **Still** under **Screen & System Audio Recording**, then reopen it if prompted. [Apple’s guide to opening downloaded apps](https://support.apple.com/en-us/102445)
 
 [![Checks](https://github.com/Niklex21/still/actions/workflows/checks.yml/badge.svg)](https://github.com/Niklex21/still/actions/workflows/checks.yml) · [Security policy](SECURITY.md) · [Privacy and local data](docs/privacy.md) · [MIT license](LICENSE)
 
@@ -54,7 +54,7 @@ cd still
 ./scripts/build.sh
 ```
 
-The script builds a release executable, assembles `dist/Still.app`, creates its icon sizes, includes the Raycast extension source, and signs the app ad hoc by default. There are no external Swift package dependencies.
+The script builds a release executable, assembles `dist/Still.app`, creates its icon sizes, includes the Raycast extension source, and signs the app ad hoc by default. Builds after 1.1 preview 1 bundle the pinned Sparkle updater. Its version and revision are recorded in Package.resolved.
 
 In Finder, open `dist` and move **Still.app** to **Applications**, then launch it. Or inspect and run the local installer:
 
@@ -82,6 +82,8 @@ Keep the same identity across rebuilds where possible. A changed signature can c
 2. Allow Still under **System Settings → Privacy & Security → Screen & System Audio Recording**. Reopen it if macOS requests that.
 3. Open **Settings → Shortcuts** to choose your keys. If another app owns a shortcut, release it there first; Still reports registration conflicts.
 4. Review **Launch at login** in Settings. Still attempts to enable it on its first normal launch.
+
+In builds after 1.1 preview 1, **Help → Quick Start** shows the active shortcuts. **Help → Report a Bug…** opens an editable GitHub issue with the app and macOS versions. **Check for Updates…** looks for signed Still releases and offers to install an available update.
 
 Closing a window leaves the menu-bar app running. **⌘Q closes Still's windows**; **Quit Still** in its menu stops the app and its shortcuts. A login launch starts in the background.
 
@@ -268,7 +270,7 @@ See [Architecture](docs/architecture.md) for the source map, data model, and int
 
 ## Status and limitations
 
-Still is an early macOS app with a downloadable universal preview and source builds. The preview is not notarized, and this repository does not provide an automatic updater. Scrolling stitching depends on visual overlap. AI descriptions and redaction suggestions need review. English semantic ranking and optional macOS 27 image understanding have the model requirements described above. There is no video/GIF recorder or cloud sharing backend.
+Still is an early macOS app with a downloadable universal preview and source builds. The preview is not notarized, and its first upgrade requires installing a new DMG. Scrolling stitching depends on visual overlap. AI descriptions and redaction suggestions need review. English semantic ranking and optional macOS 27 image understanding have the model requirements described above. There is no video/GIF recorder or cloud sharing backend.
 
 ## License
 

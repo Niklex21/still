@@ -117,6 +117,20 @@ enum ReleaseReadinessSelfTest {
             try png.write(to: output.appendingPathComponent("\(name).png")); window.contentView = nil; window.close()
             try expect(bitmap.pixelsWide > 100 && !png.isEmpty,"Offscreen \(name) renders without opening a window")
         }
+        let testStats = UsageStats(defaults: defaults, info: ["StillUsageToken": "phc_fixture", "StillUsageRegion": "EU"])
+        try expect(testStats.request(for: .imageCopied) == nil, "Fresh installs do not send stats before consent")
+        testStats.setEnabled(true)
+        let payload = try JSONSerialization.jsonObject(with: testStats.request(for: .imageCopied)!.httpBody!) as! [String: Any]
+        let properties = payload["properties"] as! [String: Any]
+        try expect(Set(payload.keys) == ["event", "api_key", "properties"] && Set(properties.keys) == ["distinct_id", "$geoip_disable", "$process_person_profile"], "Usage events allow only the public token, action, and privacy controls")
+        let nextPayload = try JSONSerialization.jsonObject(with: testStats.request(for: .imageCopied)!.httpBody!) as! [String: Any]
+        let nextProperties = nextPayload["properties"] as! [String: Any]
+        try expect(properties["distinct_id"] as? String != nextProperties["distinct_id"] as? String, "Usage events cannot be linked by a persistent installation ID")
+        testStats.setEnabled(false)
+        try expect(testStats.request(for: .imageAdded) == nil, "Withdrawing consent stops new requests")
+        let report = URLComponents(url: StillSupport.bugReport, resolvingAgainstBaseURL: false)!
+        try expect(report.host == "github.com" && report.path == "/Niklex21/still/issues/new" && Set(report.queryItems!.map(\.name)) == ["template", "version"], "Bug reporting opens an editable version-only form")
+        try snapshot("quick-start", GettingStarted(shortcuts: GlobalShortcutManager(defaults: defaults), usage: testStats, settings: {}, done: {}), CGSize(width: 420, height: 380))
         try snapshot("library",LibraryView(store: store),CGSize(width: 1080,height: 720))
         try snapshot("editor",EditorView(model: editor.model, item: a, store: store, controller: editor),CGSize(width: 1000,height: 700))
         try snapshot("export",ExportView(item: a,store: store),CGSize(width: 470,height: 510))

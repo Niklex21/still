@@ -37,7 +37,14 @@ struct ExportView: View {
             Form {
                 Picker("Format", selection: $options.format) { ForEach(ExportFormat.allCases) { Text($0.rawValue).tag($0) } }
                 Picker("Size", selection: $options.scale) { Text("Original").tag(1.0); Text("75%").tag(0.75); Text("50%").tag(0.5); Text("25%").tag(0.25); Text("2×").tag(2.0) }
-                TextField("Maximum width", value: $options.maxWidth, format: .number).help("Pixels; 0 preserves the chosen scale. Aspect ratio stays locked.")
+                LabeledContent("Maximum width (px)") {
+                    TextField("No limit", value: Binding<Int?>(
+                        get: { options.maxWidth == 0 ? nil : options.maxWidth },
+                        set: { options.maxWidth = max(0, $0 ?? 0) }
+                    ), format: .number.grouping(.never))
+                    .multilineTextAlignment(.trailing).frame(width: 90)
+                    .accessibilityLabel("Maximum width in pixels")
+                }
                 if options.format != .png { Slider(value: $options.quality, in: 0.1...1) { Text("Quality") } }
                 Text(dimensions).font(.caption).foregroundStyle(.secondary)
             }.formStyle(.grouped)
@@ -71,7 +78,11 @@ struct ExportView: View {
                 switch result {
                 case .success(let bytes):
                     if upload { store.pasteboard.clearContents(); store.pasteboard.setString(url.path, forType: .string); status = "Path copied · In the file chooser, press ⌘⇧G then ⌘V" }
-                    else { store.consume(item.id); status = "Saved · \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))" }
+                    else {
+                        if !item.isPrivate { store.usage?.record(.imageExported) }
+                        store.consume(item.id)
+                        status = "Saved · \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))"
+                    }
                 case .failure(let error): status = error.localizedDescription
                 }
             }

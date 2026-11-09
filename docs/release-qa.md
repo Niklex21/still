@@ -54,3 +54,17 @@ The release-readiness branch is undergoing these checks. Do not treat this docum
 ### 2026-11-07 local evidence
 
 On Apple Silicon with macOS/Xcode 27: 38 Swift tests and 177 native checks passed; controlled visual-index lifecycle checks passed; real on-device chart, edited shape, and bundled icon inference passed. Raycast typecheck, five tests, isolated production build, and npm audit passed with zero advisories. The source installer built, verified, and installed into `.build/install-qa` without launching. The first new universal DMG mounted read-only, passed strict signature verification, exposed both architecture slices, and passed the same 177 native checks from its mounted bundle. These counts do not sign off the manual gate above. The final rebuilt artifact and remote CI are recorded in the PR. The expanded strict local suite now includes private walkthrough/cleanup protections, long PDF captions, and CPU OCR.
+
+### Public 1.1 preview 1 transfer test, November 8
+
+On Apple Silicon running macOS 27.0.1, a fresh Chrome profile downloaded the public DMG with quarantine intact. Its SHA-256 matched the published checksum. Gatekeeper blocked the first launch and the user approved Open Anyway. The downloaded app opened with an empty, isolated Still library on an existing macOS account.
+
+A synthetic screenshot went through the public app’s shelf into an empty Finder folder and a Chrome drop target. Both recipients got the original PNG bytes. Hover-⌘C followed by ⌘V in Chrome delivered an 820 × 330 image with identical decoded pixels. Prepare for Upload followed by ⌘⇧G and ⌘V in Chrome’s native file chooser delivered the original PNG bytes to a loopback HTTP server. The successful drag and copy cleared their queue entries and preserved History.
+
+Screen Recording remained denied on a translocated test copy after the user enabled Still and relaunched it. A Finder-installed copy was seen running at /Applications/Still.app, then disappeared twice. The cause was not established. The previous working local build was restored. A successful capture after granting permission to the public DMG on a clean account remains open. Intel, minimum macOS 14, and multi-display desktop QA also remain open.
+
+### Updater and onboarding candidate
+
+A disposable pair of updater-enabled Still apps with an isolated library, bundle ID, and signing key exercised the real Check for Updates action. Sparkle offered build 101 to build 100 from a loopback feed, installed the signed DMG, and relaunched at the same path with build 101. The release-feed verifier accepted the signed archive and rejected a one-byte modification. The production feed’s initial signature was checked against the embedded production public key and the downloaded public build 5 DMG. Build 5 users install the first updater-enabled release manually.
+
+The first-run guide, consent defaults, event payload, lack of a persistent analytics ID, opt-out, and editable issue URL are covered by the packaged native checks. Remote ingestion needs a dedicated Still project. A source-built candidate upgrade on the existing Mac preserved the set of screenshot IDs and the customized shortcut configuration.

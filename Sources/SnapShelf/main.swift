@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import Carbon
 import ServiceManagement
+import Sparkle
 import QuartzCore
 import SnapShelfCore
 
@@ -29,6 +30,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
     private var shelfResizeGeneration = 0
     var libraryWindow: NSWindow?
     var settingsWindow: NSWindow?
+    var guideWindow: NSWindow?
+    let usage = UsageStats()
+    private var updater: SPUStandardUpdaterController?
     var librarySearchField: NSSearchField?
     var editors: [UUID: EditorController] = [:]
     var descriptionWindows: [UUID: DescriptionController] = [:]
@@ -63,6 +67,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         shelfInteraction.onViewed = { [weak self] in self?.store.markReviewed($0) }
         shelfInteraction.onHoverChanged = { [weak self] id in self?.updateHoverTarget(id, source: "shelf") }
         store.onPinsChanged = { [weak self] in self?.syncPinnedWindows() }
+        if testRoot == nil && !demo { store.usage = usage }
+        if !demo && Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil {
+            updater = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        }
         configureMenu()
         shortcuts.onAction = { [weak self] action in
             guard let self else { return }
@@ -88,6 +96,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
             } catch {
                 store.error = "Could not enable launch at login: \(error.localizedDescription). You can try again in Settings."
             }
+        }
+        if !demo && !loginLaunch && testRoot == nil && !CommandLine.arguments.contains("--background")
+            && !UserDefaults.standard.bool(forKey: "didShowGuide.v1") && store.history.isEmpty {
+            showGuide()
         }
         if demo { seedDemo() }
         if demo { showLibrary(); showShelf(manuallyOpened: false) }
@@ -128,6 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         let main = NSMenu(); let appItem = NSMenuItem(); let app = NSMenu()
         app.addItem(withTitle: "About Still", action: #selector(about), keyEquivalent: "")
         app.addItem(withTitle: "Settings…", action: #selector(settingsAction), keyEquivalent: ",")
+        addUpdateItem(to: app)
         app.addItem(.separator())
         app.addItem(withTitle: "Close Still Windows", action: #selector(closeWindowsAction), keyEquivalent: "q")
         app.addItem(withTitle: "Quit Still", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
@@ -161,9 +174,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         menu.addItem(withTitle: "Search Library…", action: #selector(searchAction), keyEquivalent: "")
         menu.addItem(withTitle: "Paste Image", action: #selector(pasteAction), keyEquivalent: "")
         menu.addItem(withTitle: "Settings…", action: #selector(settingsAction), keyEquivalent: "")
-        menu.addItem(.separator()); menu.addItem(withTitle: "Quit Still", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
+        addUpdateItem(to: menu)
+        let help = NSMenu(title: "Help")
+        help.addItem(withTitle: "Quick Start", action: #selector(showGuide), keyEquivalent: "")
+        help.addItem(withTitle: "Report a Bug…", action: #selector(reportBug), keyEquivalent: "")
+        let helpItem = NSMenuItem(title: "Help", action: nil, keyEquivalent: "")
+        helpItem.submenu = help
+        main.addItem(helpItem)
+        NSApp.helpMenu = help
+        let statusHelp = NSMenuItem(title: "Help", action: nil, keyEquivalent: "")
+        statusHelp.submenu = help.copy() as? NSMenu
+        menu.addItem(statusHelp)
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Quit Still", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
         status.menu = menu
     }
+    private func addUpdateItem(to menu: NSMenu) {
+        guard let updater else { return }
+        let item = menu.addItem(withTitle: "Check for Updates…", action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)), keyEquivalent: "")
+        item.target = updater
+    }
+
     func addExtraCaptureItems(to menu: NSMenu) {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Repeat Last Region", action: #selector(repeatRegionAction), keyEquivalent: "")
@@ -184,7 +215,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
     }
     @objc func closeWindowsAction() {
         dismissShelf()
-        libraryWindow?.orderOut(nil); settingsWindow?.orderOut(nil)
+        libraryWindow?.orderOut(nil); settingsWindow?.orderOut(nil); guideWindow?.close()
         Array(editors.values).forEach { $0.window?.performClose(nil) }
         descriptionWindows.values.forEach { $0.window?.orderOut(nil) }
         Array(ExportController.windows).forEach { $0.window?.performClose(nil) }
@@ -429,10 +460,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         let field = NSTextField(string: item.title); field.frame = NSRect(x: 0, y: 0, width: 340, height: 24); alert.accessoryView = field; alert.window.initialFirstResponder = field
         if alert.runModal() == .alertFirstButtonReturn { let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines); if !value.isEmpty { store.update(item.id) { $0.title = value } } }
     }
-    func showSettings() {
+    @objc func reportBug() { NSWorkspace.shared.open(StillSupport.bugReport) }
+
+    @objc func showGuide() {
+        if guideWindow == nil {
+            let view = GettingStarted(shortcuts: shortcuts, usage: usage, settings: { [weak self] in
+                self?.guideWindow?.close()
+                self?.showSettings(shortcutsTab: true)
+            }, done: { [weak self] in self?.guideWindow?.close() })
+            let window = NSWindow(contentViewController: NSHostingController(rootView: view))
+            window.title = "Quick Start"
+            window.styleMask = [.titled, .closable]
+            window.isReleasedWhenClosed = false
+            window.center()
+            guideWindow = window
+        }
+        UserDefaults.standard.set(true, forKey: "didShowGuide.v1")
+        guideWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func showSettings(shortcutsTab: Bool = false) {
         if settingsWindow == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 560), styleMask: [.titled, .closable], backing: .buffered, defer: false)
             window.title = "Still Settings"; window.contentView = NSHostingView(rootView: SettingsView(store: store, shortcuts: shortcuts, preferences: store.preferences)); window.isReleasedWhenClosed = false; window.center(); settingsWindow = window
+        }
+        if shortcutsTab {
+            settingsWindow?.contentView = NSHostingView(rootView: SettingsView(store: store, shortcuts: shortcuts, preferences: store.preferences, selectedTab: 5))
         }
         settingsWindow?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
@@ -559,30 +613,31 @@ struct SettingsView: View {
     @AppStorage("autoShelf") var autoShelf = true
     @State var login = SMAppService.mainApp.status == .enabled
     @State var message = ""
+    @State var selectedTab = 0
     var body: some View {
-        TabView {
-            general.tabItem { Label("General", systemImage: "gearshape") }
-            HoverControlsSettings(preferences: preferences).tabItem { Label("Controls", systemImage: "cursorarrow.click") }
-            WindowAppearanceSettings(preferences: preferences, root: store.disk.root).tabItem { Label("Background", systemImage: "photo") }
-            PrivacySettings(store: store, preferences: preferences).tabItem { Label("Privacy", systemImage: "lock") }
-            VisualSearchSettings(store: store, preferences: preferences).tabItem { Label("Search", systemImage: "sparkle.magnifyingglass") }
-            ShortcutSettingsView(manager: shortcuts).tabItem { Label("Shortcuts", systemImage: "keyboard") }
+        TabView(selection: $selectedTab) {
+            general.tabItem { Label("General", systemImage: "gearshape") }.tag(0)
+            HoverControlsSettings(preferences: preferences).tabItem { Label("Controls", systemImage: "cursorarrow.click") }.tag(1)
+            WindowAppearanceSettings(preferences: preferences, root: store.disk.root).tabItem { Label("Background", systemImage: "photo") }.tag(2)
+            PrivacySettings(store: store, preferences: preferences).tabItem { Label("Privacy", systemImage: "lock") }.tag(3)
+            VisualSearchSettings(store: store, preferences: preferences).tabItem { Label("Search", systemImage: "sparkle.magnifyingglass") }.tag(4)
+            ShortcutSettingsView(manager: shortcuts).tabItem { Label("Shortcuts", systemImage: "keyboard") }.tag(5)
         }.padding(8).frame(width: 620, height: 560)
     }
     var general: some View {
         Form {
             Section("Your workflow") {
                 Toggle("Show shelf after every capture", isOn: $autoShelf)
-                Picker("Capture countdown", selection: $preferences.captureDelay) { Text("3 seconds").tag(3); Text("5 seconds").tag(5); Text("10 seconds").tag(10) }
+                Picker("Delayed capture countdown", selection: $preferences.captureDelay) { Text("3 seconds").tag(3); Text("5 seconds").tag(5); Text("10 seconds").tag(10) }
                 Text("Still runs in the menu bar when its windows are closed.").font(.caption).foregroundStyle(.secondary)
                 Toggle("Launch at login", isOn: $login).onChange(of: login) { _, enabled in UserDefaults.standard.set(enabled, forKey: "launchAtLogin"); do { if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() } } catch { message = error.localizedDescription; login = SMAppService.mainApp.status == .enabled } }
             }
             Section("Raycast") {
-                Text("Search “Search Screenshots” in Raycast.").font(.callout).foregroundStyle(.secondary)
+                Text("Open Search Screenshots in Raycast.").font(.callout).foregroundStyle(.secondary)
                 Button("Open Raycast Extension Folder") { if let url = Bundle.main.resourceURL?.appendingPathComponent("Raycast") { NSWorkspace.shared.open(url) } }
             }
             Section("Local library") {
-                Button("Open Library Folder") { NSWorkspace.shared.open(store.disk.root) }
+                Button("Show Library Folder") { NSWorkspace.shared.open(store.disk.root) }
                 Text("All screenshots and recognized text stay on this Mac.").font(.system(size: 11)).foregroundStyle(.secondary)
             }
             if !message.isEmpty { Text(message).foregroundStyle(.orange) }

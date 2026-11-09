@@ -48,6 +48,7 @@ final class CaptureStore: ObservableObject {
     @Published private(set) var feedbackDetail: String?
     private let ocrQueue = DispatchQueue(label: "Still.OCR", qos: .utility)
     private let thumbnails = NSCache<NSString, NSImage>()
+    var usage: UsageStats?
     var onImport: (() -> Void)?
     var onPinsChanged: (() -> Void)?
     var shelf: [Capture] { captures.filter(\.onShelf) }
@@ -212,6 +213,7 @@ final class CaptureStore: ObservableObject {
     func finishShelfDrag(_ id: UUID, succeeded: Bool) {
         activeDragID = nil
         guard succeeded else { return }
+        if let item = captures.first(where: { $0.id == id }), !item.isPrivate { usage?.record(.imageDragged) }
         update(id) { $0.onShelf = false }
     }
     func dismissCurrentPreviews() {
@@ -253,6 +255,7 @@ final class CaptureStore: ObservableObject {
     func savePNG(_ item: Capture, to url: URL) throws {
         let data = try Data(contentsOf: disk.url(item))
         try data.write(to: url, options: .atomic)
+        if !item.isPrivate { usage?.record(.imageExported) }
         consume(item.id)
         showCopyConfirmation(item.id, message: "Saved")
     }
@@ -315,6 +318,7 @@ final class CaptureStore: ObservableObject {
         if let thumbnail {
             thumbnails.setObject(NSImage(cgImage: thumbnail,size: .zero),forKey: "\(item.id)-\(item.revision)" as NSString,cost: thumbnail.bytesPerRow * thumbnail.height)
         }
+        if !privateCapture { usage?.record(.imageAdded) }
         onImport?(); return item
     }
     func importURLs(_ urls: [URL]) {
@@ -373,6 +377,7 @@ final class CaptureStore: ObservableObject {
         guard let image = NSImage(contentsOf: disk.url(item)) else { error = "The image file is missing."; return false }
         pasteboard.clearContents()
         guard pasteboard.writeObjects([image]) else { error = "Could not copy the image. Please try again."; return false }
+        if !item.isPrivate { usage?.record(.imageCopied) }
         showCopyConfirmation(item.id)
         consume(item.id)
         return true
@@ -440,6 +445,7 @@ final class CaptureStore: ObservableObject {
                     self.pasteboard.clearContents()
                     let type: NSPasteboard.PasteboardType = shared.format == .jpeg ? NSPasteboard.PasteboardType("public.jpeg") : .png
                     if self.pasteboard.setData(shared.data, forType: type) {
+                        if !item.isPrivate { self.usage?.record(.imageCopied) }
                         self.showCopyConfirmation(item.id, message: "Copied for sharing", detail: "\(shared.width) × \(shared.height) · \(ByteCountFormatter.string(fromByteCount: Int64(shared.data.count), countStyle: .file))")
                         self.consume(item.id)
                     } else { self.error = "Could not copy the sharing image." }

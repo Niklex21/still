@@ -22,6 +22,17 @@ APP="$staging/Still.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$bin_dir/Still" "$APP/Contents/MacOS/Still"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+if [[ -n "${STILL_USAGE_TOKEN:-}" || -n "${STILL_USAGE_REGION:-}" ]]; then
+  if [[ ! "${STILL_USAGE_TOKEN:-}" =~ ^phc_[a-zA-Z0-9_]+$ || ! "${STILL_USAGE_REGION:-}" =~ ^(US|EU)$ ]]; then
+    echo 'Usage counts require a public Still project token and US or EU region.' >&2
+    exit 1
+  fi
+  plutil -insert StillUsageToken -string "$STILL_USAGE_TOKEN" "$APP/Contents/Info.plist"
+  plutil -insert StillUsageRegion -string "$STILL_USAGE_REGION" "$APP/Contents/Info.plist"
+fi
+mkdir -p "$APP/Contents/Frameworks"
+ditto "$PWD/.build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
+cp .build/artifacts/sparkle/Sparkle/LICENSE "$APP/Contents/Resources/Sparkle-LICENSE"
 cp Resources/StillIcon.png "$APP/Contents/Resources/AppIcon.png"
 mkdir -p "$staging/AppIcon.iconset"
 for size in 16 32 128 256 512; do
@@ -39,6 +50,10 @@ cp LICENSE "$APP/Contents/Resources/LICENSE"
 signing_identity="${STILL_SIGNING_IDENTITY:--}"
 signing_args=(--force --sign "$signing_identity" --identifier local.alex.Still)
 if [[ "$signing_identity" == "Developer ID Application:"* ]]; then
+  sparkle="$APP/Contents/Frameworks/Sparkle.framework"
+  for component in "$sparkle/Versions/B/XPCServices/Downloader.xpc" "$sparkle/Versions/B/XPCServices/Installer.xpc" "$sparkle/Versions/B/Autoupdate" "$sparkle/Versions/B/Updater.app" "$sparkle"; do
+    codesign --force --sign "$signing_identity" --options runtime --timestamp --preserve-metadata=identifier,entitlements "$component"
+  done
   signing_args+=(--options runtime --timestamp)
 fi
 codesign "${signing_args[@]}" "$APP"

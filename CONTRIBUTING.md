@@ -4,7 +4,7 @@ Still favors a small native UI, fast capture actions, reversible editing, and lo
 
 ## Get started
 
-Follow the build instructions in [README.md](README.md). Use Xcode 27's SDK for the full app. The Swift package has no external dependencies; the optional Raycast extension installs its JavaScript dependencies with `npm ci`.
+Follow the build instructions in [README.md](README.md). Use Xcode 27's SDK for the full app. The Swift package pins Sparkle for signed software updates; the optional Raycast extension installs its JavaScript dependencies with `npm ci`.
 
 Use `STILL_DATA_DIR` with a fresh temporary directory for demos and manual experiments. Do not run `--demo` against your everyday library. Native self-tests already use isolated stores.
 
