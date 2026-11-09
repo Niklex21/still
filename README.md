@@ -9,7 +9,7 @@ Still is a native menu-bar app built with Swift, AppKit, and SwiftUI. It keeps a
 
 ## Download
 
-**[Download Still for Mac (.dmg)](https://github.com/Niklex21/still/releases/download/v1.0.0-preview.1/Still-1.0.0-preview.1-universal.dmg)** · [Release notes](https://github.com/Niklex21/still/releases/tag/v1.0.0-preview.1)
+**[Download Still 1.1 Preview for Mac (.dmg)](https://github.com/Niklex21/still/releases/download/v1.1.0-preview.1/Still-1.1.0-preview.1-universal.dmg)** · [Release notes](https://github.com/Niklex21/still/releases/tag/v1.1.0-preview.1)
 
 Open the DMG, drag **Still** into **Applications**, then launch it. The app is self-contained; no developer tools or Node.js are needed. The universal download includes Apple Silicon and Intel code.
 
@@ -46,10 +46,10 @@ The app checks model availability at runtime. Capture, annotation, history, OCR,
 
 ## Build and install
 
-Clone the repository and build:
+To build the published preview from source, clone its release tag and build locally.
 
 ```sh
-git clone https://github.com/Niklex21/still.git
+git clone --branch v1.1.0-preview.1 https://github.com/Niklex21/still.git
 cd still
 ./scripts/build.sh
 ```

@@ -54,19 +54,24 @@ The Intel slice can be cross-compiled on Apple Silicon, but building it is not p
 
 ## Publish on GitHub
 
-Commit the release tooling and documentation first, and attach the DMG and checksum to a release at that commit. For example, using GitHub CLI:
+Use one GitHub release per distributed build. Preview tags take the form `vX.Y.Z-preview.N`. Stable tags take the form `vX.Y.Z`. Increment `CFBundleVersion` for each new build and set `CFBundleShortVersionString` to the numeric version. Give fixes a new tag and keep the original DMG downloadable.
+
+1. Select a clean commit on `main` with passing Checks and CodeQL. Build from that commit or use its tested universal CI artifact. If you rename a CI artifact for distribution, regenerate its checksum with the new filename.
+2. Prepare the DMG, its SHA-256 checksum, and a build manifest recording the commit, CI run, bundle version and build, architectures, signing status, and DMG hash. Record the verification results and outstanding manual checks in the release notes.
+3. Create a **draft** against the full commit SHA. The example below assumes the release files and notes are ready. Set `tag` to the new version being staged.
 
 ```sh
-gh release create v1.1.0-preview.1 \
-  dist/Still-1.1.0-preview.1-universal.dmg \
-  dist/Still-1.1.0-preview.1-universal.dmg.sha256 \
-  --repo Niklex21/still \
-  --prerelease \
-  --title "Still 1.1.0 preview 1" \
-  --notes-file /path/to/release-notes.md
+tag=v1.1.0-preview.2
+commit=$(git rev-parse HEAD)
+base="dist/Still-${tag#v}-universal"
+gh release create "$tag" "$base.dmg" "$base.dmg.sha256" "$base-build.json" \
+  --repo Niklex21/still --target "$commit" --draft --prerelease \
+  --title "Still ${tag#v}" --notes-file release-notes.md
 ```
 
-Preview release notes should explicitly state the signing/notarization status, macOS requirements, optional model requirements, tested architecture, and installation steps. GitHub's source-code ZIP/TAR downloads contain source; the separately attached `.dmg` is the runnable app download.
+4. Download the staged assets and verify the checksum. Mount the exact DMG, check its app version and signature, and run the packaged app checks. Record desktop testing against the [release QA checklist](release-qa.md).
+5. Publish the reviewed draft with `gh release edit "$tag" --repo Niklex21/still --draft=false`. For a stable release, stage the draft without `--prerelease` and publish it with `--latest`.
+6. Confirm the public tag resolves to the tested commit. Update the README download button, release notes link, and source checkout example together. Download the DMG through the public link while signed out and verify its SHA-256 against the published checksum.
 
 ## Build from source instead
 
