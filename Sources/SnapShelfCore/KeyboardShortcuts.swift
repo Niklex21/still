@@ -50,7 +50,7 @@ public struct KeyboardShortcut: Codable, Equatable {
 }
 
 public struct ShortcutBindings: Codable, Equatable {
-    public var version: Int? = 6
+    public var version: Int? = 7
     public var shortcuts: [String: KeyboardShortcut]
     public init(shortcuts: [String: KeyboardShortcut] = [:]) { self.shortcuts = shortcuts }
     public subscript(_ action: ShortcutAction) -> KeyboardShortcut? {
@@ -78,6 +78,7 @@ public struct ShortcutBindings: Codable, Equatable {
         addDescriptionDefault()
         addSharingCopyDefault()
         addTrashDefault()
+        pairOptionActions()
     }
     public mutating func addUploadDefault() {
         let shortcut = KeyboardShortcut(keyCode: 32, modifiers: UInt32(cmdKey))
@@ -105,6 +106,20 @@ public struct ShortcutBindings: Codable, Equatable {
         let shortcut = KeyboardShortcut(keyCode: 51, modifiers: UInt32(cmdKey | optionKey))
         if !shortcuts.isEmpty, self[.trashHovered] == nil, conflict(for: shortcut, excluding: .trashHovered) == nil {
             self[.trashHovered] = shortcut
+        }
+    }
+    /// Only replace the former stock shortcuts and only when both halves of the pair are available.
+    public mutating func pairOptionActions() {
+        defer { version = max(version ?? 1, 7) }
+        for (action, old, baseAction, key) in [
+            (ShortcutAction.uploadHovered, KeyboardShortcut(keyCode: 32, modifiers: UInt32(cmdKey)), ShortcutAction.pinHovered, UInt32(kVK_ANSI_P)),
+            (.textHovered, KeyboardShortcut(keyCode: 8, modifiers: UInt32(cmdKey | shiftKey)), .editHovered, UInt32(kVK_ANSI_E))
+        ] {
+            let base = KeyboardShortcut(keyCode: key, modifiers: UInt32(cmdKey))
+            let alternate = KeyboardShortcut(keyCode: key, modifiers: UInt32(cmdKey | optionKey))
+            if self[action] == old, self[baseAction] == base, conflict(for: alternate, excluding: action) == nil {
+                self[action] = alternate
+            }
         }
     }
     public func conflict(for shortcut: KeyboardShortcut, excluding action: ShortcutAction) -> ShortcutAction? {

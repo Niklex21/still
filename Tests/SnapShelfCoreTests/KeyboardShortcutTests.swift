@@ -37,7 +37,7 @@ final class KeyboardShortcutTests: XCTestCase {
         XCTAssertFalse(ShortcutAction.shelf.isHoverAction)
         old[.copyHovered] = nil
         let saved = try JSONDecoder().decode(ShortcutBindings.self, from: JSONEncoder().encode(old))
-        XCTAssertEqual(saved.version, 6)
+        XCTAssertEqual(saved.version, 7)
         XCTAssertNil(saved[.copyHovered])
         XCTAssertEqual(ShortcutAction.library.eventID, 6)
     }
@@ -50,6 +50,27 @@ final class KeyboardShortcutTests: XCTestCase {
         var off = ShortcutBindings()
         off.addTrashDefault()
         XCTAssertTrue(off.shortcuts.isEmpty)
+    }
+    func testOptionPairsRespectExistingChoicesWhenUpgrading() {
+        let oldUpload = KeyboardShortcut(keyCode: 32, modifiers: UInt32(cmdKey))
+        let oldText = KeyboardShortcut(keyCode: 8, modifiers: UInt32(cmdKey | shiftKey))
+        var old = ShortcutBindings.defaults()
+        old.version = 6; old[.uploadHovered] = oldUpload; old[.textHovered] = oldText
+        var changed = old
+        changed.pairOptionActions()
+        XCTAssertEqual(changed, .defaults())
+        changed = old
+        changed[.revealHovered] = ShortcutBindings.defaults()[.uploadHovered]
+        changed[.editHovered] = nil
+        changed.pairOptionActions()
+        XCTAssertEqual(changed[.uploadHovered], oldUpload)
+        XCTAssertEqual(changed[.textHovered], oldText)
+        changed = old
+        changed[.uploadHovered] = nil
+        changed[.textHovered] = KeyboardShortcut(keyCode: 17, modifiers: UInt32(cmdKey))
+        let custom = changed.shortcuts
+        changed.pairOptionActions()
+        XCTAssertEqual(changed.shortcuts, custom)
     }
     func testDuplicatesExcludeTheActionBeingEdited() throws {
         let settings = ShortcutBindings.defaults()

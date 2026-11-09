@@ -95,7 +95,7 @@ A new capture appears in the floating shelf. Up to three captures from the curre
 
 While hovering, **⌘Delete** dismisses the preview and keeps it in History. Starting with build 7, **⌥⌘Delete** immediately moves the hovered screenshot and its original to macOS Trash. You can change both shortcuts in Settings.
 
-Build 8 shows shortcut hints on the hover buttons. Hold **Option** to see matching alternate actions, then click the button or press its displayed shortcut. Dismiss becomes Trash and Copy for Sharing becomes Copy Full-Size Image with the default bindings. Release Option to switch back.
+Build 8 shows shortcut hints on the hover buttons. Hold **Option** to see matching alternate actions, then click the button or press its displayed shortcut. Dismiss becomes Trash and Copy for Sharing becomes Copy Full-Size Image with the default bindings. In History, the outlined trash can asks for confirmation; the filled red can skips it. Build 9 also pairs Pin with Prepare for Upload and Annotate with Copy Text. Release Option to switch back.
 
 Hovering a preview dims its image and reveals corner actions. Configure their positions, size, dimming, and date visibility in **Settings → Controls**.
 
@@ -136,14 +136,14 @@ All of these can be changed or disabled in **Settings → Shortcuts**. Defaults 
 | Search History | ⌘F in Still; a global shortcut can be assigned |
 | Import / paste an image | ⌘O / ⌘V in Still |
 
-While hovering a screenshot:
+While hovering a screenshot (build 9 defaults):
 
 | Action | Default |
 | --- | --- |
 | Copy for Sharing / original image | ⌘C / ⌥⌘C |
-| Copy recognized text | ⇧⌘C |
+| Copy recognized text | ⌥⌘E |
 | Annotate / pin or unpin | ⌘E / ⌘P |
-| Export / prepare for upload | ⌘S / ⌘U |
+| Export / prepare for upload | ⌘S / ⌥⌘P |
 | Show description / reveal in Finder | ⌘I / ⌘R |
 | Mark viewed / remove from queue | ⌘K / ⌘⌫ |
 

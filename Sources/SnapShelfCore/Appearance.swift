@@ -24,7 +24,7 @@ public enum ScreenshotAction: String, Codable, CaseIterable, Identifiable {
     public var symbol: String {
         switch self {
         case .none: return "minus"
-        case .trash: return "trash"
+        case .trash: return "trash.fill"
         case .dismiss: return "xmark"
         case .pin: return "pin"
         case .edit: return "pencil"
