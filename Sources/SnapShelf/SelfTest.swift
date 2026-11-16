@@ -217,9 +217,9 @@ enum SelfTest {
                    "File upload targets receive a single PNG file without a second inline image representation")
         transfers.finish(dragURL, succeeded: true)
         try expect(FileManager.default.fileExists(atPath: dragURL.path), "Successful drop retains its PNG for asynchronous upload")
-        advance(0.08)
-        try expect(!FileManager.default.fileExists(atPath: dragURL.path) && FileManager.default.fileExists(atPath: originalURL.path),
-                   "Completed drop expires without deleting the screenshot in History")
+        try eventually("Completed drop expires without deleting the screenshot in History") {
+            !FileManager.default.fileExists(atPath: dragURL.path) && FileManager.default.fileExists(atPath: originalURL.path)
+        }
         dragView.onEnd = { success in
             store.finishShelfDrag(dragged.id, succeeded: success)
             interaction.endDragging()
