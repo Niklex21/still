@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import SnapShelfCore
 import ScreenCaptureKit
+import OSLog
 
 final class SelectionPanel: NSPanel {
     var onCancel: (() -> Void)?
@@ -14,6 +15,9 @@ final class RegionSelector {
     var panels: [NSPanel] = []
     let completion: (CGRect?) -> Void
     let instructions: String
+    private var freezeTask: Task<Void, Never>?
+    private let logger = Logger(subsystem: "local.alex.Still", category: "RegionSelector")
+    private var previousCursor: NSCursor?
     var completed = false
     var selectedImage: CGImage?
     var selectedProcessID: Int32?
@@ -21,22 +25,25 @@ final class RegionSelector {
     let minimumSize: CGFloat
     init(instructions: String = "Select scrolling content · Drag a region · Esc to cancel", minimumSize: CGFloat = 2, completion: @escaping (CGRect?) -> Void) { self.instructions = instructions; self.minimumSize = minimumSize; self.completion = completion }
     func start() {
-        Task { @MainActor in
+        freezeTask = Task { @MainActor in
             let screens = NSScreen.screens
             var backgrounds: [CGDirectDisplayID: CGImage] = [:]
             if let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true) {
                 let ownApplications = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
                 for display in content.displays {
+                    guard !Task.isCancelled else { return }
                     let scale = screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == display.displayID }?.backingScaleFactor ?? 1
                     let config = SCStreamConfiguration(); config.width = Int(CGFloat(display.width) * scale); config.height = Int(CGFloat(display.height) * scale); config.showsCursor = false
                     let filter = SCContentFilter(display: display, excludingApplications: ownApplications, exceptingWindows: [])
                     if let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) { backgrounds[display.displayID] = image }
                 }
             }
+            self.logger.debug("Region freeze returned for \(screens.count) displays, with \(backgrounds.count) images.")
             self.present(screens: screens, backgrounds: backgrounds)
         }
     }
     func present(screens: [NSScreen], backgrounds: [CGDirectDisplayID: CGImage]) {
+        guard !completed, !screens.isEmpty else { finish(nil); return }
         let windows = (CGWindowListCopyWindowInfo([.optionOnScreenOnly,.excludeDesktopElements],kCGNullWindowID) as? [[String: Any]] ?? []).compactMap { info -> ScrollCaptureLayout.WindowTarget? in
             guard let pid = info[kCGWindowOwnerPID as String] as? Int32,
                   let layer = info[kCGWindowLayer as String] as? Int,
@@ -44,12 +51,13 @@ final class RegionSelector {
                   let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
             return .init(processID: pid,frame: frame,layer: layer,windowID: (info[kCGWindowNumber as String] as? NSNumber)?.uint32Value ?? 0)
         }
-        NSApp.activate(ignoringOtherApps: true)
+        previousCursor = NSCursor.currentSystem ?? NSCursor.current
         for screen in screens {
-            let panel = SelectionPanel(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            let panel = SelectionPanel(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             panel.onCancel = { [weak self] in self?.finish(nil) }
-            panel.isReleasedWhenClosed = false; panel.level = .screenSaver; panel.backgroundColor = .clear; panel.isOpaque = false; panel.hasShadow = false
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            panel.isReleasedWhenClosed = false; panel.backgroundColor = .clear; panel.isOpaque = false; panel.hasShadow = false
+            panel.animationBehavior = .none; panel.isFloatingPanel = true; panel.level = .screenSaver; panel.hidesOnDeactivate = false
+            panel.collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary]
             let view = SelectionView(frame: NSRect(origin: .zero, size: screen.frame.size))
             if let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber, let background = backgrounds[id.uint32Value] {
                 view.backgroundImage = NSImage(cgImage: background, size: screen.frame.size)
@@ -72,13 +80,19 @@ final class RegionSelector {
                 } else { self.finish(nil) }
             }
             panel.acceptsMouseMovedEvents = true
-            panel.contentView = view; panels.append(panel); panel.makeKeyAndOrderFront(nil); panel.makeFirstResponder(view)
+            panel.contentView = view; panels.append(panel)
+            panel.orderFrontRegardless()
+            logger.info("Ordered region selector \(panel.windowNumber) at level \(panel.level.rawValue); visible: \(panel.isVisible), active Space: \(panel.isOnActiveSpace).")
+            if screen.frame.contains(NSEvent.mouseLocation) { panel.makeKey() }; panel.makeFirstResponder(view)
         }
-        NSCursor.crosshair.push()
+        PanelCursor.set(.crosshair)
     }
     func finish(_ rect: CGRect?) {
         guard !completed else { return }; completed = true
-        for panel in panels { panel.orderOut(nil); panel.contentView = nil; panel.close() }; panels.removeAll(); NSCursor.pop()
+        logger.debug("Ending region selection, accepted: \(rect != nil).")
+        freezeTask?.cancel(); freezeTask = nil
+        if let previousCursor { PanelCursor.set(previousCursor); self.previousCursor = nil }
+        for panel in panels { panel.orderOut(nil); panel.contentView = nil; panel.close() }; panels.removeAll()
         completion(rect)
     }
 }
@@ -91,17 +105,23 @@ final class SelectionView: NSView {
     var start: CGPoint?
     var end: CGPoint?
     override var acceptsFirstResponder: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     private var cursorTracking: NSTrackingArea?
     override func resetCursorRects() { super.resetCursorRects(); addCursorRect(bounds, cursor: .crosshair) }
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        if let cursorTracking { removeTrackingArea(cursorTracking) }
-        let area = NSTrackingArea(rect: .zero, options: [.activeAlways, .inVisibleRect, .cursorUpdate, .mouseEnteredAndExited, .enabledDuringMouseDrag], owner: self)
+        guard cursorTracking == nil else { return }
+        let area = NSTrackingArea(rect: .zero, options: [.activeAlways, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved, .enabledDuringMouseDrag], owner: self)
         addTrackingArea(area)
         cursorTracking = area
     }
-    override func cursorUpdate(with event: NSEvent) { NSCursor.crosshair.set() }
-    override func mouseEntered(with event: NSEvent) { NSCursor.crosshair.set() }
+    private func showCrosshair() {
+        guard window?.isVisible == true else { return }
+        PanelCursor.set(.crosshair)
+    }
+    override func cursorUpdate(with event: NSEvent) { showCrosshair() }
+    override func mouseEntered(with event: NSEvent) { showCrosshair() }
+    override func mouseMoved(with event: NSEvent) { showCrosshair() }
 
     override func draw(_ dirtyRect: NSRect) {
         backgroundImage?.draw(in: bounds)
@@ -140,8 +160,8 @@ final class SelectionView: NSView {
             label.draw(at: CGPoint(x: badge.minX + 6, y: badge.minY + 3), withAttributes: attributes)
         }
     }
-    override func mouseDown(with event: NSEvent) { start = convert(event.locationInWindow, from: nil); end = start; needsDisplay = true }
-    override func mouseDragged(with event: NSEvent) { NSCursor.crosshair.set(); end = convert(event.locationInWindow, from: nil); needsDisplay = true }
+    override func mouseDown(with event: NSEvent) { showCrosshair(); start = convert(event.locationInWindow, from: nil); end = start; needsDisplay = true }
+    override func mouseDragged(with event: NSEvent) { showCrosshair(); end = convert(event.locationInWindow, from: nil); needsDisplay = true }
     override func mouseUp(with event: NSEvent) {
         guard let start else { return }; let end = convert(event.locationInWindow, from: nil)
         let rect = CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y)).integral

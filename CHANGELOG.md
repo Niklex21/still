@@ -1,11 +1,14 @@
 # Changelog
 
-## Unreleased
+## [1.2.0 Preview 1](https://github.com/Niklex21/still/releases/tag/v1.2.0-preview.1)
 
-- Move the floating screenshot shelf by its center grip. Move the pointer near the handle to reveal Collapse and History. Collapsing the shelf keeps its queue available for later.
-- Press **⌥⇧−** to collapse or restore the shelf. You can change the shortcut in Settings → Shortcuts.
-- Dragging a screenshot hands the destination a temporary PNG copy. This improves compatibility with upload fields such as the Lovable composer.
-- Starting another area capture replaces an unfinished selection.
+Released November 16, 2026 (build 31).
+
+- Move the screenshot shelf by dragging the center grip. The bar expands as you approach, and the cursor changes from an open hand to a closed hand as you drag.
+- Click Collapse or press **⌥⇧−** to tuck the shelf out of the way. Press the shortcut again to restore your queue. You can change it in Settings → Shortcuts.
+- Open History from the clock on the shelf. History now loads thumbnails as you browse, making it faster to open and close large libraries.
+- Drag screenshots into upload fields, including the Lovable composer, as temporary PNG files. A successful drop removes the preview and keeps the original in History.
+- Area capture shows a crosshair while you aim and drag. Starting another area capture replaces an unfinished selection.
 
 ## [1.1.0 Preview 2](https://github.com/Niklex21/still/releases/tag/v1.1.0-preview.2)
 

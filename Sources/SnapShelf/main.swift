@@ -22,12 +22,14 @@ final class ShelfPanel: NSPanel {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
     static var shared: AppDelegate!
     var store: CaptureStore!
+    private var pendingOpenURLs: [URL] = []
     var status: NSStatusItem!
     var shelfPanel: NSPanel?
     let shelfInteraction = ShelfInteraction()
     var shelfExpandsLeft = false
     let shelfPositionMemory = ShelfPositionMemory()
     private var shelfResizeGeneration = 0
+    private var tuckedOrigin: CGPoint?
     var libraryWindow: NSWindow?
     var settingsWindow: NSWindow?
     var guideWindow: NSWindow?
@@ -50,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.shared = self
+        ScreenshotTransferFiles.shared.removeAbandoned()
         demo = ProcessInfo.processInfo.arguments.contains("--demo")
         let loginLaunch = NSAppleEventManager.shared().currentAppleEvent?.paramDescriptor(forKeyword: AEKeyword(keyAELaunchedAsLogInItem)) != nil
         let testRoot = ProcessInfo.processInfo.environment["STILL_DATA_DIR"]
@@ -83,6 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
             case .screen: self.capture(.screen)
             case .scrolling: if let session = self.scrollSession { session.finish() } else { self.capture(.scrolling) }
             case .shelf: self.toggleShelf()
+            case .collapseShelf: self.toggleShelfCollapse()
             case .library: self.searchAction()
             default: self.performHoveredAction(action)
             }
@@ -104,11 +108,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         } else if !loginLaunch && !CommandLine.arguments.contains("--background") {
             if !showFirstGuideIfNeeded() && !store.shelf.isEmpty { showShelf(manuallyOpened: false) }
         }
+        if !pendingOpenURLs.isEmpty {
+            let urls = pendingOpenURLs
+            pendingOpenURLs.removeAll()
+            application(NSApp, open: urls)
+        }
     }
     func applicationWillTerminate(_ notification: Notification) {
         scrollSession?.cancel()
         countdown?.finish(canceled: true)
         if captureProcess?.isRunning == true { captureProcess?.terminate() }
+        ScreenshotTransferFiles.shared.cleanOnQuit()
         store?.clearPrivateCaptures()
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -117,6 +127,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         return true
     }
     func application(_ application: NSApplication, open urls: [URL]) {
+        guard store != nil else {
+            pendingOpenURLs.append(contentsOf: urls)
+            return
+        }
         for url in urls {
             guard url.scheme == "still" else { store.importURLs([url]); continue }
             let parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
@@ -336,9 +350,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
             let screen = PanelPlacement.screen(containing: origin)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
             let panel = ShelfPanel(contentRect: PanelPlacement.shelfFrame(size: compactShelfSize, screen: screen, origin: origin), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             panel.title = "Still Shelf"
+            panel.acceptsMouseMovedEvents = true
             panel.onDismiss = { [weak self] in self?.dismissShelf() }
             panel.level = .floating; panel.isFloatingPanel = true; panel.hidesOnDeactivate = false
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]; panel.isMovableByWindowBackground = true
+            panel.collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary]; panel.isMovableByWindowBackground = true
+            panel.animationBehavior = .none
             panel.backgroundColor = .clear; panel.isOpaque = false; panel.hasShadow = false
             panel.contentView = makeShelfSurface(store: store, interaction: shelfInteraction)
             panel.delegate = shelfPositionMemory
@@ -357,14 +373,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
             panel.setFrame(PanelPlacement.shelfFrame(size: size, screen: screen, origin: origin), display: false)
             panel.contentView?.layoutSubtreeIfNeeded()
             shelfPositionMemory.applyingLayout = false
-            panel.orderFrontRegardless()
         } else if manuallyOpened {
+            if shelfInteraction.tucked { setShelfTucked(false) }
             shelfInteraction.present(expanded: true, manuallyOpened: true)
+        }
+        panel.orderFrontRegardless()
+    }
+    func setShelfTucked(_ tucked: Bool) {
+        guard let panel = shelfPanel, panel.isVisible, shelfInteraction.tucked != tucked else { return }
+        let frame = panel.frame
+        let screen = panel.screen?.visibleFrame ?? frame
+        let size: CGSize
+        if tucked {
+            shelfInteraction.tuck()
+            size = ShelfLayout.tuckedSize
+        } else {
+            shelfInteraction.restore()
+            size = ShelfLayout.panelSize(expanded: shelfInteraction.expanded, compact: compactShelfSize,
+                                         current: compactShelfSize, shelfCount: shelfInteraction.manuallyOpened ? store.history.count : store.shelf.count,
+                                         availableWidth: screen.width - 20)
+        }
+        // Keep the closest corner fixed even when the shelf has been moved to another display.
+        let origin = CGPoint(x: frame.midX > screen.midX ? frame.maxX - size.width : frame.minX,
+                             y: frame.midY > screen.midY ? frame.maxY - size.height : frame.minY)
+        shelfResizeGeneration += 1
+        shelfPositionMemory.applyingLayout = true
+        panel.hasShadow = tucked || shelfInteraction.expanded
+        let target = PanelPlacement.shelfFrame(size: size, screen: screen, origin: origin)
+        panel.setFrame(target, display: true)
+        panel.contentView?.layoutSubtreeIfNeeded()
+        shelfPositionMemory.applyingLayout = false
+        shelfInteraction.finishResize(pointerInside: target.contains(NSEvent.mouseLocation))
+        if tucked {
+            tuckedOrigin = target.origin
+        } else {
+            if let tuckedOrigin, frame.origin != tuckedOrigin {
+                PanelPlacement.save(target.origin, key: "shelfOrigin.v2")
+            }
+            tuckedOrigin = nil
         }
     }
     func dismissShelf() {
-        store.dismissCurrentPreviews()
         hideShelf()
+        store.dismissCurrentPreviews()
     }
     func hideShelf() {
         shelfPanel?.orderOut(nil)
@@ -375,7 +426,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         hideShelf()
     }
     func expandShelf(_ expanded: Bool) {
-        guard let panel = shelfPanel, panel.isVisible else { return }
+        guard let panel = shelfPanel, panel.isVisible, !shelfInteraction.tucked else { return }
         if store.copiedID != nil && store.shelf.isEmpty && !shelfInteraction.manuallyOpened { return }
         if store.copiedID == nil && shelfInteraction.shouldHide(queueCount: store.shelf.count, pendingCount: store.pendingCount) {
             hideShelf()
@@ -407,8 +458,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
             self.shelfInteraction.finishResize(pointerInside: panel.frame.contains(NSEvent.mouseLocation))
         }
     }
+    func toggleShelfCollapse() {
+        if shelfPanel?.isVisible == true {
+            setShelfTucked(!shelfInteraction.tucked)
+        } else if !store.shelf.isEmpty {
+            showShelf(manuallyOpened: false)
+        }
+    }
     func toggleShelf() {
-        if shelfPanel?.isVisible == true { dismissShelf() } else { showShelf() }
+        if shelfInteraction.tucked { setShelfTucked(false) }
+        else if shelfPanel?.isVisible == true { dismissShelf() }
+        else { showShelf() }
     }
     func showLibrary() {
         if libraryWindow == nil {
@@ -508,6 +568,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
         return NSScreen.screens.map { CGRect(x: $0.frame.minX,y: mainTop - $0.frame.maxY,width: $0.frame.width,height: $0.frame.height) }
     }
     func capture(_ mode: CaptureMode, repeatLast: Bool = false, delay: Int = 0, privateCapture: Bool = false) {
+        // A new capture request replaces an unfinished region selection, including a pending screen freeze.
+        selection?.finish(nil)
         guard !capturing, scrollSession == nil else { return }
         guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else {
             let alert = NSAlert(); alert.messageText = "Allow Still to capture your screen"

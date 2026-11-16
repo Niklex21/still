@@ -275,12 +275,45 @@ final class CaptureStore: ObservableObject {
         markReviewed(item.id)
         NSWorkspace.shared.activateFileViewerSelecting([disk.url(item)])
     }
+    func cachedThumbnail(_ item: Capture) -> NSImage? {
+        thumbnails.object(forKey: "\(item.id)-\(item.revision)" as NSString)
+    }
+
+    private static func decodeThumbnail(at url: URL) -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: 700,
+            kCGImageSourceShouldCacheImmediately: true
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    }
+
+    private func cacheThumbnail(_ image: CGImage, for item: Capture) -> NSImage {
+        let result = NSImage(cgImage: image, size: .zero)
+        thumbnails.setObject(result, forKey: "\(item.id)-\(item.revision)" as NSString,
+                             cost: image.bytesPerRow * image.height)
+        return result
+    }
+
     func thumbnail(_ item: Capture) -> NSImage? {
-        let key = "\(item.id)-\(item.revision)" as NSString
-        if let cached = thumbnails.object(forKey: key) { return cached }
-        guard let source = CGImageSourceCreateWithURL(disk.url(item) as CFURL, nil),
-              let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 700] as CFDictionary) else { return nil }
-        let result = NSImage(cgImage: cg, size: .zero); thumbnails.setObject(result, forKey: key, cost: cg.bytesPerRow * cg.height); return result
+        if let cached = cachedThumbnail(item) { return cached }
+        return Self.decodeThumbnail(at: disk.url(item)).map { cacheThumbnail($0, for: item) }
+    }
+
+    @MainActor func loadShelfThumbnail(_ item: Capture) async -> NSImage? {
+        if let cached = cachedThumbnail(item) { return cached }
+        let url = disk.url(item)
+        let decode = Task.detached(priority: .userInitiated) {
+            Task.isCancelled ? nil : Self.decodeThumbnail(at: url)
+        }
+        let image = await withTaskCancellationHandler {
+            await decode.value
+        } onCancel: {
+            decode.cancel()
+        }
+        guard !Task.isCancelled, let image else { return nil }
+        return cacheThumbnail(image, for: item)
     }
     @discardableResult func add(_ image: CGImage, title: String? = nil, metadata: CaptureMetadata? = nil, privateCapture: Bool = false, encodedPNG: Data? = nil, thumbnail: CGImage? = nil) throws -> Capture {
         guard image.width <= 30_000, image.height <= 30_000, image.width * image.height <= 150_000_000 else { throw Imaging.ImageError.tooLarge }

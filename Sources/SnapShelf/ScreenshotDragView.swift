@@ -17,7 +17,7 @@ struct ScreenshotDragView: NSViewRepresentable {
         view.onClick = onClick; view.onBegin = onBegin; view.onEnd = onEnd
         view.needsDisplay = true
     }
-    final class ImageDragView: NSView, NSDraggingSource, NSPasteboardItemDataProvider {
+    final class ImageDragView: NSView, NSDraggingSource {
         var image: NSImage?
         var url: URL?
         var fill = false
@@ -25,6 +25,7 @@ struct ScreenshotDragView: NSViewRepresentable {
         var onClick: (Int) -> Void = { _ in }
         var onBegin: () -> Void = {}
         var onEnd: (Bool) -> Void = { _ in }
+        private var transfer: URL?
         private var down: NSEvent?
         private var isDragging = false
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -51,10 +52,16 @@ struct ScreenshotDragView: NSViewRepresentable {
                 window?.performDrag(with: down)
                 return
             }
-            let pasteboardItem = NSPasteboardItem()
-            pasteboardItem.setString(url.absoluteString, forType: .fileURL)
-            pasteboardItem.setDataProvider(self, forTypes: [.png])
-            let item = NSDraggingItem(pasteboardWriter: pasteboardItem)
+            do {
+                transfer = try ScreenshotTransferFiles.shared.prepare(url)
+            } catch {
+                self.down = nil
+                AppDelegate.shared?.store.error = "Could not prepare the screenshot for dragging. " + error.localizedDescription
+                NSSound.beep()
+                return
+            }
+            guard let transfer else { return }
+            let item = Self.fileDragItem(for: transfer)
             item.setDraggingFrame(bounds, contents: image)
             isDragging = true; onBegin()
             beginDraggingSession(with: [item], event: event, source: self).animatesToStartingPositionsOnCancelOrFail = true
@@ -65,10 +72,71 @@ struct ScreenshotDragView: NSViewRepresentable {
             completeDrag(success: !operation.isEmpty)
         }
         func completeDrag(success: Bool) {
+            if let transfer {
+                ScreenshotTransferFiles.shared.finish(transfer, succeeded: success)
+                self.transfer = nil
+            }
             isDragging = false; down = nil; onEnd(success)
         }
-        func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
-            if type == .png, let url, let data = try? Data(contentsOf: url) { item.setData(data, forType: .png) }
+        static func fileDragItem(for url: URL) -> NSDraggingItem {
+            // Let AppKit publish the same file representation that upload fields expect.
+            NSDraggingItem(pasteboardWriter: url as NSURL)
+        }
+    }
+}
+
+
+// A web uploader can finish reading after AppKit has reported a successful drop.
+final class ScreenshotTransferFiles {
+    static let shared = ScreenshotTransferFiles()
+    private let root: URL
+    private let lease: TimeInterval
+    private var owned = Set<URL>()
+
+    init(root: URL = FileManager.default.temporaryDirectory.appendingPathComponent("Still-Drag-Exports", isDirectory: true),
+         lease: TimeInterval = 60) {
+        self.root = root
+        self.lease = lease
+    }
+
+    func prepare(_ source: URL) throws -> URL {
+        let fm = FileManager.default
+        let directory = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let file = directory.appendingPathComponent(source.lastPathComponent)
+        do {
+            try fm.copyItem(at: source, to: file)
+            owned.insert(directory)
+            return file
+        } catch {
+            try? fm.removeItem(at: directory)
+            throw error
+        }
+    }
+
+    func finish(_ file: URL, succeeded: Bool) {
+        let dir = file.deletingLastPathComponent()
+        if succeeded {
+            DispatchQueue.main.asyncAfter(deadline: .now() + lease) { [self] in remove(dir) }
+        } else { remove(dir) }
+    }
+
+    private func remove(_ dir: URL) {
+        guard owned.remove(dir) != nil else { return }
+        try? FileManager.default.removeItem(at: dir)
+    }
+
+    func cleanOnQuit() { for dir in Array(owned) { remove(dir) } }
+
+    func removeAbandoned() {
+        let fm = FileManager.default
+        guard let dirs = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: [.contentModificationDateKey],
+                                                      options: [.skipsHiddenFiles]) else { return }
+        for dir in dirs where UUID(uuidString: dir.lastPathComponent) != nil && !owned.contains(dir) {
+            if let date = try? dir.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+               Date().timeIntervalSince(date) > lease {
+                try? fm.removeItem(at: dir)
+            }
         }
     }
 }

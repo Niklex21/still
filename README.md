@@ -9,9 +9,9 @@ Still is a native menu-bar app built with Swift, AppKit, and SwiftUI. It keeps a
 
 ## Download
 
-**[Download Still 1.1 Preview 2 for Mac (.dmg)](https://github.com/Niklex21/still/releases/download/v1.1.0-preview.2/Still-1.1.0-preview.2-universal.dmg)** · [Release notes](https://github.com/Niklex21/still/releases/tag/v1.1.0-preview.2)
+**[Download Still 1.2 Preview 1 for Mac (.dmg)](https://github.com/Niklex21/still/releases/download/v1.2.0-preview.1/Still-1.2.0-preview.1-universal.dmg)** · [Release notes](https://github.com/Niklex21/still/releases/tag/v1.2.0-preview.1)
 
-Open the DMG, drag **Still** into **Applications**, then launch it. The app is self-contained; no developer tools or Node.js are needed. The universal download includes Apple Silicon and Intel code. If you use Preview 1, install this update from the DMG. Preview 2 includes **Check for Updates…** for future releases.
+Open the DMG, drag **Still** into **Applications**, then launch it. The app is self-contained; no developer tools or Node.js are needed. The universal download includes Apple Silicon and Intel code. From Still 1.1 Preview 2 or later, choose **Check for Updates…** in the Still menu. For earlier versions, install the update from the DMG.
 
 **First launch on macOS.** This preview is ad-hoc signed and unnotarized. If macOS shows “Still Not Opened,” click **Done**. If you trust this download, open **System Settings → Privacy & Security → Open Anyway** and confirm. On your first capture, allow **Still** under **Screen & System Audio Recording**, then reopen it if prompted. [Apple’s guide to opening downloaded apps](https://support.apple.com/en-us/102445)
 
@@ -49,7 +49,7 @@ The app checks model availability at runtime. Capture, annotation, history, OCR,
 To build the published preview from source, clone its release tag and build locally.
 
 ```sh
-git clone --branch v1.1.0-preview.2 https://github.com/Niklex21/still.git
+git clone --branch v1.2.0-preview.1 https://github.com/Niklex21/still.git
 cd still
 ./scripts/build.sh
 ```
@@ -91,7 +91,7 @@ Closing a window leaves the menu-bar app running. **⌘Q closes Still's windows*
 
 ### Queue, shelf, and History
 
-A new capture appears in the floating shelf. Up to three captures from the current batch have separate previews; older queued captures form an offset stack. Drag the shelf's empty space or expanded top bar to move it. Hover or click the older stack to expand it, or use the shelf shortcut.
+A new capture appears in the floating shelf. Up to three captures from the current batch have separate previews; older queued captures form an offset stack. Move the pointer near the small pill above the previews to reveal Collapse and History. Drag its center to move all previews together. Drag a screenshot itself to attach its PNG file. Click the down chevron to minimize the queue into a movable handle. Press **⌥⇧−** (Option–Shift–Minus) to collapse or restore it from any app. Customize the binding in Settings → Shortcuts. New captures collect there until you click the stack icon or press the shelf shortcut (default **⌥⇧0**) to restore it. Hover or click the older stack to expand it, or use the shelf shortcut.
 
 While hovering, **⌘Delete** dismisses the preview and keeps it in History. Starting with build 7, **⌥⌘Delete** immediately moves the hovered screenshot and its original to macOS Trash. You can change both shortcuts in Settings.
 
@@ -103,7 +103,7 @@ Hovering a preview dims its image and reveals corner actions. Configure their po
 - Copying, exporting, editing, or pinning also consumes its queue entry. Older images do not move into newly empty preview slots.
 - Closing the shelf dismisses the **entire pending queue**, including its older stack. Those images remain in History and do not return with the next capture.
 - Viewing an image clears its unread count without necessarily consuming it. The counter reflects queued images still waiting for attention.
-- Automatic previews collapse when you move away and hide once nothing remains unread. A shelf opened explicitly stays open until you dismiss it. The side chevron opens History explicitly; hovering the older stack expands only the pending queue.
+- Automatic previews collapse when you move away and hide once nothing remains unread. A shelf opened explicitly stays open until you dismiss it. The clock in the hover bar opens History; hovering the older stack expands only the pending queue.
 - In History, **Move to Trash** deletes the capture's stored image files, rather than just removing its preview.
 
 The queue starts at the bottom left. **Pin to Screen** creates a separate floating image at the bottom right; additional pins overlap in a diagonal stack. Both remember moved positions. Drag a pin to move it, Option-drag to export it, and resize from a corner. Pins survive app restarts.

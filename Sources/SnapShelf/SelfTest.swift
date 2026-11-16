@@ -12,6 +12,12 @@ enum SelfTest {
         func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {
             guard condition() else { throw Failure(description: message) }; checks += 1; print("PASS \(message)")
         }
+        var selectionCallbacks = 0
+        let cancelled = RegionSelector { _ in selectionCallbacks += 1 }
+        cancelled.finish(nil)
+        cancelled.present(screens: NSScreen.screens, backgrounds: [:])
+        cancelled.finish(nil)
+        try expect(cancelled.panels.isEmpty && selectionCallbacks == 1, "An obsolete screen freeze cannot reopen a canceled selector or complete twice")
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("Still-SelfTest-\(UUID())")
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try CaptureStore(root: root, pasteboard: clipboard)
@@ -155,6 +161,21 @@ enum SelfTest {
         interaction.scrolled()
         advance(0.1)
         try expect(interaction.expanded, "Scrolling outside a manually opened shelf does not collapse it")
+        interaction.pointer(over: first.id, inside: true)
+        interaction.visibleItems([first.id])
+        interaction.tuck()
+        interaction.pointerInside(true)
+        interaction.pointer(over: second.id, inside: true)
+        interaction.visibleItems([second.id])
+        interaction.stackHovered(true)
+        interaction.scrolled()
+        advance(0.1)
+        try expect(interaction.tucked && interaction.hoveredID == nil && !interaction.scrolling,
+                   "A minimized handle cannot target a hidden capture or respond to scrolling")
+        try expect(interaction.manuallyOpened && interaction.expanded,
+                   "Minimizing preserves the previous History view")
+        interaction.restore()
+        try expect(!interaction.tucked && interaction.manuallyOpened, "Restoring returns to History")
         interaction.dismiss()
         try expect(!interaction.expanded && !interaction.manuallyOpened, "Explicit dismissal clears the manual-open state")
         interaction.present(expanded: false)
@@ -175,6 +196,30 @@ enum SelfTest {
         try expect(!interaction.shouldHideWhenMinimized(pendingCount: 0), "The last screenshot stays on screen during an active drag")
         let dragged = try store.add(source, title: "Drag this directly")
         let dragView = ScreenshotDragView.ImageDragView()
+        let originalURL = store.disk.url(dragged)
+        let transfers = ScreenshotTransferFiles(root: root.appendingPathComponent("DragTest"), lease: 0.03)
+        let dragURL = try transfers.prepare(originalURL)
+        let originalBytes = try Data(contentsOf: originalURL)
+        let droppedBytes = try Data(contentsOf: dragURL)
+        try expect(droppedBytes == originalBytes && dragURL.deletingLastPathComponent() != originalURL.deletingLastPathComponent(),
+                   "Browser drags hand off an independent PNG outside the library")
+        let canceledFile = try transfers.prepare(originalURL)
+        transfers.finish(canceledFile, succeeded: false)
+        try expect(!FileManager.default.fileExists(atPath: canceledFile.path) && FileManager.default.fileExists(atPath: dragURL.path),
+                   "Cancel removes only that drag’s temporary file")
+        let fileItem = ScreenshotDragView.ImageDragView.fileDragItem(for: dragURL)
+        let dragBoard = NSPasteboard.withUniqueName()
+        defer { dragBoard.releaseGlobally() }
+        guard let writer = fileItem.item as? NSURL else { throw Failure(description: "Drag item has no file URL") }
+        try expect(dragBoard.writeObjects([writer]), "Drag publishes a native file URL")
+        let droppedFiles = dragBoard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]
+        try expect(droppedFiles == [dragURL] && dragBoard.availableType(from: [.png, .tiff]) == nil,
+                   "File upload targets receive a single PNG file without a second inline image representation")
+        transfers.finish(dragURL, succeeded: true)
+        try expect(FileManager.default.fileExists(atPath: dragURL.path), "Successful drop retains its PNG for asynchronous upload")
+        advance(0.08)
+        try expect(!FileManager.default.fileExists(atPath: dragURL.path) && FileManager.default.fileExists(atPath: originalURL.path),
+                   "Completed drop expires without deleting the screenshot in History")
         dragView.onEnd = { success in
             store.finishShelfDrag(dragged.id, succeeded: success)
             interaction.endDragging()
@@ -271,6 +316,27 @@ enum SelfTest {
         try expect(migratedQueue.compactShelf.recent.map(\.id) == legacy.filter(\.needsAttention).prefix(3).map(\.id), "Old libraries migrate only unread captures into current previews")
         let display = CGRect(x: 100, y: 50, width: 1200, height: 800)
         let size = CGSize(width: 400, height: 260)
+        let shelfDriver = AppDelegate()
+        shelfDriver.store = store
+        let testPanel = ShelfPanel(contentRect: CGRect(x: 40, y: 40, width: 220, height: 156),
+                                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        testPanel.contentView = makeShelfSurface(store: store, interaction: shelfDriver.shelfInteraction)
+        testPanel.alphaValue = 0
+        testPanel.orderBack(nil)
+        shelfDriver.shelfPanel = testPanel
+        let queuedBefore = store.shelf.map(\.id)
+        shelfDriver.setShelfTucked(true)
+        try expect(testPanel.frame.size == ShelfLayout.tuckedSize && store.shelf.map(\.id) == queuedBefore,
+                   "Minimizing shrinks the panel without consuming any previews")
+        let newCapture = try store.add(source, title: "Taken while minimized")
+        shelfDriver.showShelf(manuallyOpened: false)
+        try expect(testPanel.frame.size == ShelfLayout.tuckedSize && store.pendingCount > 0,
+                   "An incoming capture leaves the minimized panel in place")
+        shelfDriver.toggleShelf()
+        try expect(!shelfDriver.shelfInteraction.tucked && testPanel.frame.width > ShelfLayout.tuckedSize.width &&
+                   Set(store.shelf.map(\.id)) == Set(queuedBefore + [newCapture.id]),
+                   "The shelf shortcut restores all queued captures including the newest")
+        testPanel.orderOut(nil)
         let defaultShelf = PanelPlacement.shelfFrame(size: size, screen: display, origin: nil)
         let defaultPin = PanelPlacement.pinFrame(size: size, screen: display, anchor: nil, depth: 0)
         let stackedPin = PanelPlacement.pinFrame(size: size, screen: display, anchor: nil, depth: 1)

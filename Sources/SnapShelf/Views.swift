@@ -139,11 +139,56 @@ struct CaptureCard: View {
 }
 
 struct ShelfMoveHandle: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView { DragHandle() }
-    func updateNSView(_ view: NSView, context: Context) {}
+    func makeNSView(context: Context) -> DragHandle { DragHandle() }
+    func updateNSView(_ view: DragHandle, context: Context) {}
+
     final class DragHandle: NSView {
-        override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
-        override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        private var tracking: NSTrackingArea?
+        private var grabOffset: CGPoint?
+        private var moveCursor: NSCursor { grabOffset == nil ? .openHand : .closedHand }
+        override var mouseDownCanMoveWindow: Bool { false }
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            guard tracking == nil else { return }
+            let area = NSTrackingArea(rect: .zero, options: [.activeAlways, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved],
+                                      owner: self, userInfo: nil)
+            addTrackingArea(area)
+            tracking = area
+            addTrackingArea(NSTrackingArea(rect: .zero, options: [.activeInActiveApp, .inVisibleRect, .cursorUpdate], owner: self, userInfo: nil))
+        }
+        private func setCursor(_ cursor: NSCursor) {
+            PanelCursor.set(cursor)
+        }
+        override func cursorUpdate(with event: NSEvent) { setCursor(moveCursor) }
+        override func mouseMoved(with event: NSEvent) { setCursor(moveCursor) }
+        override func mouseEntered(with event: NSEvent) { setCursor(moveCursor) }
+        override func mouseExited(with event: NSEvent) {
+            if grabOffset == nil && NSCursor.current == .openHand { setCursor(.arrow) }
+        }
+        override func mouseDown(with event: NSEvent) {
+            guard let window else { return }
+            let pointer = window.convertPoint(toScreen: event.locationInWindow)
+            grabOffset = CGPoint(x: pointer.x - window.frame.minX, y: pointer.y - window.frame.minY)
+            window.invalidateCursorRects(for: self)
+            setCursor(.closedHand)
+        }
+        override func mouseDragged(with event: NSEvent) {
+            guard let window, let grabOffset else { return }
+            let pointer = window.convertPoint(toScreen: event.locationInWindow)
+            let origin = CGPoint(x: pointer.x - grabOffset.x, y: pointer.y - grabOffset.y)
+            let screen = NSScreen.screens.first { $0.frame.contains(pointer) } ?? window.screen
+            let frame = CGRect(origin: origin, size: window.frame.size)
+            window.setFrameOrigin(screen.map { PanelPlacement.clamped(frame, to: $0.visibleFrame).origin } ?? origin)
+            setCursor(.closedHand)
+        }
+        override func mouseUp(with event: NSEvent) {
+            grabOffset = nil
+            window?.invalidateCursorRects(for: self)
+            let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+            setCursor(inside ? .openHand : .arrow)
+        }
+        override func resetCursorRects() { super.resetCursorRects(); addCursorRect(bounds, cursor: moveCursor) }
     }
 }
 
@@ -151,16 +196,19 @@ struct ShelfMoveHandle: NSViewRepresentable {
 struct ShelfHoverArea: NSViewRepresentable {
     let onHover: (Bool) -> Void
     var onScroll: (() -> Void)? = nil
+    var collapsedCapsuleSize: CGSize?
     func makeNSView(context: Context) -> TrackingView {
         let view = TrackingView()
         view.onHover = onHover
         view.onScroll = onScroll
+        view.collapsedCapsuleSize = collapsedCapsuleSize
         return view
     }
     func updateNSView(_ view: TrackingView, context: Context) { view.onHover = onHover; view.onScroll = onScroll }
     final class TrackingView: NSView {
         var onHover: ((Bool) -> Void)?
         var onScroll: (() -> Void)?
+        var collapsedCapsuleSize: CGSize?
         private var area: NSTrackingArea?
         private var scrollMonitor: Any?
         private var inside = false
@@ -170,12 +218,29 @@ struct ShelfHoverArea: NSViewRepresentable {
             // inVisibleRect follows layout and scrolling itself. Replacing the
             // tracking area here generates false exit/enter pairs during layout.
             guard area == nil else { return }
-            let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect, .enabledDuringMouseDrag], owner: self, userInfo: nil)
+            var options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeAlways, .inVisibleRect, .enabledDuringMouseDrag]
+            if collapsedCapsuleSize != nil { options.insert(.mouseMoved) }
+            let area = NSTrackingArea(rect: .zero, options: options, owner: self, userInfo: nil)
             addTrackingArea(area)
             self.area = area
         }
-        override func mouseEntered(with event: NSEvent) { if !inside { inside = true; onHover?(true) } }
-        override func mouseExited(with event: NSEvent) { if inside { inside = false; onHover?(false) } }
+        private func setInside(_ value: Bool) {
+            guard inside != value else { return }
+            inside = value
+            onHover?(value)
+        }
+        private func containsPointer(_ event: NSEvent) -> Bool {
+            let point = convert(event.locationInWindow, from: nil)
+            guard let collapsedCapsuleSize else { return bounds.contains(point) }
+            let size = inside ? bounds.size : collapsedCapsuleSize
+            let bottomAlignedY = isFlipped ? bounds.maxY - size.height : bounds.minY
+            let capsule = CGRect(x: bounds.midX - size.width / 2, y: bottomAlignedY,
+                                 width: size.width, height: size.height)
+            return NSBezierPath(roundedRect: capsule, xRadius: size.height / 2, yRadius: size.height / 2).contains(point)
+        }
+        override func mouseEntered(with event: NSEvent) { setInside(collapsedCapsuleSize == nil || containsPointer(event)) }
+        override func mouseMoved(with event: NSEvent) { if collapsedCapsuleSize != nil { setInside(containsPointer(event)) } }
+        override func mouseExited(with event: NSEvent) { setInside(false) }
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor); self.scrollMonitor = nil }
@@ -189,12 +254,34 @@ struct ShelfHoverArea: NSViewRepresentable {
     }
 }
 
+private struct ShelfIconButton: View {
+    let symbol: String
+    let hint: String
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.primary.opacity(hovered ? 0.20 : 0.08), in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .background(ShelfHoverArea { hovered = $0 })
+        .help(hint)
+        .accessibilityLabel(hint)
+    }
+}
+
 struct ShelfView: View {
     @ObservedObject var store: CaptureStore
     @ObservedObject var interaction: ShelfInteraction
+    @State private var pillHovered = false
+    @State private var gripHovered = false
     @State private var cardFrames: [UUID: CGRect] = [:]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    var body: some View {
+    private var previews: some View {
         VStack(spacing: 0) {
             if interaction.expanded {
                 HStack(spacing: 10) {
@@ -206,6 +293,7 @@ struct ShelfView: View {
                         }.allowsHitTesting(false)
                         ShelfMoveHandle()
                     }.frame(maxWidth: .infinity).frame(height: 30).help("Drag to move")
+                    minimizeButton.frame(width: 32, height: 28)
                     Button { AppDelegate.shared?.showLibrary() } label: { Image(systemName: "magnifyingglass") }.help("Search library")
                     Menu {
                         Button("Capture Region") { AppDelegate.shared?.capture(.region) }
@@ -229,7 +317,7 @@ struct ShelfView: View {
             } else if interaction.expanded {
                 GeometryReader { viewport in
                     ScrollView(.horizontal) {
-                        HStack(spacing: 8) {
+                        LazyHStack(spacing: 8) {
                             ForEach(interaction.manuallyOpened ? store.history : store.shelf) { item in
                                 ShelfThumbnail(store: store, item: item, expanded: true, interaction: interaction).frame(width: 150, height: 108)
                                     .background(GeometryReader { geometry in
@@ -253,28 +341,104 @@ struct ShelfView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .modifier(ShelfGlass(expanded: interaction.expanded))
         .opacity(!interaction.manuallyOpened && store.shelf.isEmpty && store.copiedID == nil ? 0 : 1)
-        .overlay(alignment: .trailing) {
-            if !interaction.expanded && !store.captures.isEmpty {
-                Button { AppDelegate.shared?.showShelf(manuallyOpened: true) } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 24, height: 24)
-                        .background(.thinMaterial, in: Circle())
-                        .contentShape(Circle())
-                }.buttonStyle(.plain).padding(.trailing, 8).offset(y: 4)
-                    .opacity(interaction.pointerIsInside && !interaction.dragging ? 1 : 0)
-                    .allowsHitTesting(interaction.pointerIsInside && !interaction.dragging)
-                    .accessibilityHidden(!interaction.pointerIsInside || interaction.dragging)
-                    .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: interaction.pointerIsInside)
-                    .help("Expand screenshot history")
-                    .accessibilityLabel("Expand screenshot history")
-            }
+        .overlay(alignment: .top) {
+            if !interaction.expanded && !store.shelf.isEmpty { actionBar }
         }
         .overlay(alignment: .bottom) {
             if store.copiedID != nil { CopyConfirmation(message: store.feedbackMessage, detail: store.feedbackDetail).padding(.bottom, 5).allowsHitTesting(false) }
         }
         .background(ShelfHoverArea(onHover: { _ in }, onScroll: { interaction.scrolled() }))
+    }
+
+    private var actionBar: some View {
+        let restingSize = CGSize(width: 54, height: 7)
+        let openSize = CGSize(width: 164, height: 34)
+        let buttonDiameter: CGFloat = 28
+        let spacing: CGFloat = 4
+        let inset = (openSize.height - buttonDiameter) / 2
+        let gripWidth = openSize.width - 2 * (inset + buttonDiameter + spacing)
+        let open = pillHovered && !interaction.dragging
+        let animation: Animation? = reduceMotion ? nil : .easeOut(duration: 0.14)
+
+        return HStack(spacing: 0) {
+            ShelfMoveHandle()
+            ZStack(alignment: .bottom) {
+                Capsule().fill(.regularMaterial)
+                    .overlay { Capsule().fill(Color.primary.opacity(open ? 0 : 0.25)) }
+                    .frame(width: open ? openSize.width : restingSize.width,
+                           height: open ? openSize.height : restingSize.height)
+                    .shadow(color: .black.opacity(0.16), radius: 2, y: 1)
+                    .allowsHitTesting(false)
+                    .animation(animation, value: open)
+                HStack(spacing: spacing) {
+                    minimizeButton.frame(width: buttonDiameter, height: buttonDiameter)
+                    Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
+                        .frame(width: gripWidth, height: buttonDiameter)
+                        .background(Color.primary.opacity(gripHovered ? 0.19 : 0.08), in: Capsule())
+                        .allowsHitTesting(false)
+                    ShelfIconButton(symbol: "clock.arrow.circlepath", hint: "Open screenshot history") {
+                        AppDelegate.shared?.showShelf(manuallyOpened: true)
+                    }.frame(width: buttonDiameter, height: buttonDiameter)
+                }
+                .padding(inset)
+                .opacity(open ? 1 : 0)
+                .animation(animation, value: open)
+                .allowsHitTesting(open)
+                .accessibilityHidden(!open)
+
+                ShelfMoveHandle()
+                    .frame(width: open ? gripWidth : restingSize.width,
+                           height: open ? buttonDiameter : restingSize.height)
+                    .background(ShelfHoverArea { gripHovered = $0 })
+                    .padding(.bottom, open ? inset : 0)
+                    .help("Drag to move the shelf")
+            }
+            .frame(width: openSize.width, height: openSize.height, alignment: .bottom)
+            ShelfMoveHandle()
+        }
+        .font(.system(size: 13, weight: .medium))
+        .frame(maxWidth: .infinity)
+        .frame(height: 38, alignment: .bottom)
+        .overlay(alignment: .bottom) {
+            // The stationary tracker includes the approach from the gap below the bar.
+            ShelfHoverArea(onHover: { pillHovered = $0 },
+                           collapsedCapsuleSize: CGSize(width: restingSize.width + 24, height: restingSize.height + 12))
+                .frame(width: openSize.width + 8, height: openSize.height + 8)
+                .offset(y: 6)
+        }
+        .onDisappear { pillHovered = false }
+    }
+
+    private var minimizeButton: some View {
+        ShelfIconButton(symbol: "chevron.down", hint: "Collapse shelf") {
+            AppDelegate.shared?.setShelfTucked(true)
+        }
+    }
+
+    private var tuckedHandle: some View {
+        HStack(spacing: 0) {
+            ZStack {
+                Capsule().fill(Color.primary.opacity(gripHovered ? 0.10 : 0)).padding(.vertical, 3).allowsHitTesting(false)
+                Image(systemName: "line.3.horizontal").foregroundStyle(.secondary).allowsHitTesting(false)
+                ShelfMoveHandle()
+            }.frame(width: 23).help("Drag to move the shelf")
+                .background(ShelfHoverArea { gripHovered = $0 })
+            Button { AppDelegate.shared?.setShelfTucked(false) } label: {
+                HStack(spacing: 2) {
+                    Image(systemName: "rectangle.stack")
+                    if store.pendingCount > 0 { Text("\(store.pendingCount)").monospacedDigit() }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
+            }.buttonStyle(.plain).help("Restore shelf").accessibilityLabel("Restore shelf")
+        }
+        .padding(.horizontal, 3)
+        .font(.system(size: 11, weight: .medium))
+        .background(.regularMaterial, in: Capsule())
+    }
+
+    var body: some View {
+        Group {
+            if interaction.tucked { tuckedHandle } else { previews }
+        }
         .onChange(of: store.compactShelf.columnCount) { _, _ in
             if !interaction.expanded { AppDelegate.shared?.expandShelf(false) }
         }
@@ -307,7 +471,7 @@ struct CompactShelfRow: View {
                 OlderScreenshotStack(store: store, items: store.compactShelf.older, interaction: interaction)
                     .frame(width: 124, height: 108)
             }
-        }.padding(.leading, 20).padding(.trailing, 20 + ShelfLayout.historyGutter).padding(.top, 28).padding(.bottom, 20)
+        }.padding(.horizontal, 20).padding(.top, ShelfLayout.compactCardTop).padding(.bottom, 12)
     }
 }
 
@@ -352,6 +516,15 @@ struct ShelfThumbnail: View {
     @ObservedObject var interaction: ShelfInteraction
     @ObservedObject private var preferences: CapturePreferences
     var pinned = false
+    @State private var loadedThumbnail: NSImage?
+    @State private var loadedKey: String?
+    private var thumbnailKey: String { "\(item.id)-\(item.revision)" }
+    private var displayedThumbnail: NSImage? {
+        if expanded {
+            return store.cachedThumbnail(item) ?? (loadedKey == thumbnailKey ? loadedThumbnail : nil)
+        }
+        return store.thumbnail(item)
+    }
     private var hover: Bool { !interaction.scrolling && !interaction.dragging && interaction.hoveredID == item.id }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     init(store: CaptureStore, item: Capture, expanded: Bool, interaction: ShelfInteraction, pinned: Bool = false) {
@@ -361,7 +534,7 @@ struct ShelfThumbnail: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(expanded ? 0.035 : 0))
-            if let image = store.thumbnail(item) {
+            if let image = displayedThumbnail {
                 ScreenshotDragView(image: image, url: store.disk.url(item), fill: !expanded, moveWindowOnDrag: pinned,
                     onClick: { count in if count == 2 { AppDelegate.shared?.edit(item) } },
                     onBegin: { store.beginShelfDrag(item.id); interaction.beginDragging() }, onEnd: { success in
@@ -385,6 +558,13 @@ struct ShelfThumbnail: View {
         .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hover)
         .background(ShelfHoverArea { interaction.pointer(over: item.id, inside: $0) })
         .onDisappear { interaction.pointer(over: item.id, inside: false) }
+        .task(id: expanded ? thumbnailKey : nil) {
+            guard expanded, store.cachedThumbnail(item) == nil else { return }
+            let image = await store.loadShelfThumbnail(item)
+            guard !Task.isCancelled else { return }
+            loadedThumbnail = image
+            loadedKey = thumbnailKey
+        }
         .contextMenu {
             ForEach(ScreenshotAction.allCases.filter { $0 != .none && $0 != .history && $0 != .trash }) { action in
                 Button(actionLabel(action, item: item, inHistory: interaction.manuallyOpened && !pinned), role: action == .dismiss && interaction.manuallyOpened && !pinned ? .destructive : nil) {

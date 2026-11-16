@@ -12,6 +12,20 @@ final class KeyboardShortcutTests: XCTestCase {
         XCTAssertEqual(controlOption[.window]?.modifiers, UInt32(controlKey | optionKey))
         XCTAssertTrue(ShortcutBindings.defaults(legacyPreset: "off").shortcuts.isEmpty)
     }
+    func testCollapseShortcutMigration() {
+        let shortcut = KeyboardShortcut(keyCode: UInt32(kVK_ANSI_Minus), modifiers: UInt32(optionKey | shiftKey))
+        XCTAssertFalse(ShortcutAction.collapseShelf.isHoverAction)
+        XCTAssertEqual(ShortcutBindings.defaults()[.collapseShelf], shortcut)
+        var old = ShortcutBindings(shortcuts: [ShortcutAction.region.rawValue: shortcut])
+        old.version = 7
+        old.addCollapseDefault()
+        XCTAssertNil(old[.collapseShelf])
+        XCTAssertEqual(old[.region], shortcut)
+        XCTAssertEqual(old.version, 8)
+        var disabled = ShortcutBindings.defaults(legacyPreset: "off")
+        disabled.addCollapseDefault()
+        XCTAssertTrue(disabled.shortcuts.isEmpty)
+    }
     func testIndependentCustomBindingsAndDisabledActionsSurviveEncoding() throws {
         var settings = ShortcutBindings.defaults()
         let custom = KeyboardShortcut(keyCode: 15, modifiers: UInt32(cmdKey | controlKey | shiftKey))
@@ -56,8 +70,10 @@ final class KeyboardShortcutTests: XCTestCase {
         let oldText = KeyboardShortcut(keyCode: 8, modifiers: UInt32(cmdKey | shiftKey))
         var old = ShortcutBindings.defaults()
         old.version = 6; old[.uploadHovered] = oldUpload; old[.textHovered] = oldText
+        old[.collapseShelf] = nil
         var changed = old
         changed.pairOptionActions()
+        changed.addCollapseDefault()
         XCTAssertEqual(changed, .defaults())
         changed = old
         changed[.revealHovered] = ShortcutBindings.defaults()[.uploadHovered]

@@ -5,6 +5,7 @@ public enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     case region, window, screen, scrolling, shelf, library
     case copyHovered, editHovered, pinHovered, exportHovered, reviewHovered, removeHovered, textHovered, revealHovered, uploadHovered, descriptionHovered
     case repeatRegion, delayedRegion, privateRegion, copySharingHovered, trashHovered
+    case collapseShelf
     public var id: String { rawValue }
     public var title: String {
         switch self {
@@ -16,6 +17,7 @@ public enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .window: return "Capture Window"
         case .screen: return "Capture Full Screen"
         case .scrolling: return "Capture Scrolling Region"
+        case .collapseShelf: return "Collapse / Restore Shelf"
         case .shelf: return "Toggle Shelf"
         case .library: return "Search Library"
         case .copyHovered: return "Copy Full-Size Image"
@@ -32,7 +34,7 @@ public enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         }
     }
     public var eventID: UInt32 { UInt32(Self.allCases.firstIndex(of: self)! + 1) }
-    public var isHoverAction: Bool { eventID > 6 && ![.repeatRegion, .delayedRegion, .privateRegion].contains(self) }
+    public var isHoverAction: Bool { eventID > 6 && ![.repeatRegion, .delayedRegion, .privateRegion, .collapseShelf].contains(self) }
 }
 
 public struct KeyboardShortcut: Codable, Equatable {
@@ -50,7 +52,7 @@ public struct KeyboardShortcut: Codable, Equatable {
 }
 
 public struct ShortcutBindings: Codable, Equatable {
-    public var version: Int? = 7
+    public var version: Int? = 8
     public var shortcuts: [String: KeyboardShortcut]
     public init(shortcuts: [String: KeyboardShortcut] = [:]) { self.shortcuts = shortcuts }
     public subscript(_ action: ShortcutAction) -> KeyboardShortcut? {
@@ -65,6 +67,7 @@ public struct ShortcutBindings: Codable, Equatable {
             result[action] = KeyboardShortcut(keyCode: UInt32(key), modifiers: modifiers)
         }
         result.addHoverDefaults()
+        result.addCollapseDefault()
         return result
     }
     public mutating func addHoverDefaults() {
@@ -120,6 +123,13 @@ public struct ShortcutBindings: Codable, Equatable {
             if self[action] == old, self[baseAction] == base, conflict(for: alternate, excluding: action) == nil {
                 self[action] = alternate
             }
+        }
+    }
+    public mutating func addCollapseDefault() {
+        defer { version = 8 }
+        let shortcut = KeyboardShortcut(keyCode: UInt32(kVK_ANSI_Minus), modifiers: UInt32(optionKey | shiftKey))
+        if !shortcuts.isEmpty, self[.collapseShelf] == nil, conflict(for: shortcut, excluding: .collapseShelf) == nil {
+            self[.collapseShelf] = shortcut
         }
     }
     public func conflict(for shortcut: KeyboardShortcut, excluding action: ShortcutAction) -> ShortcutAction? {

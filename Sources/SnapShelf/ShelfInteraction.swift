@@ -2,13 +2,14 @@ import Foundation
 import Combine
 
 enum ShelfLayout {
-    static let historyGutter: CGFloat = 28
+    static let compactCardTop: CGFloat = 44
+    static let tuckedSize = CGSize(width: 66, height: 32)
     // Invisible clearance for the card shadows, not a visible panel backdrop.
     static func minimizedSize(recentCount: Int, hasOlder: Bool) -> CGSize {
-        guard recentCount > 0 || hasOlder else { return CGSize(width: 192, height: 156) }
+        guard recentCount > 0 || hasOlder else { return CGSize(width: 192, height: compactCardTop + 108 + 12) }
         let cards = CGFloat(recentCount) * 152
         let gaps = CGFloat(max(0, recentCount + (hasOlder ? 1 : 0) - 1)) * 12
-        return CGSize(width: 40 + historyGutter + cards + gaps + (hasOlder ? 124 : 0), height: 156)
+        return CGSize(width: 40 + cards + gaps + (hasOlder ? 124 : 0), height: compactCardTop + 108 + 12)
     }
     static func panelSize(expanded: Bool, compact: CGSize, current: CGSize, shelfCount: Int, availableWidth: CGFloat) -> CGSize {
         guard expanded else { return CGSize(width: min(compact.width, availableWidth), height: compact.height) }
@@ -21,6 +22,7 @@ enum ShelfLayout {
 
 /// Keeps pointer, scrolling, and review timing independent of thumbnail layout.
 final class ShelfInteraction: ObservableObject {
+    @Published private(set) var tucked = false
     @Published private(set) var expanded = false
     @Published private(set) var scrolling = false
     @Published private(set) var hoveredID: UUID?
@@ -58,21 +60,35 @@ final class ShelfInteraction: ObservableObject {
     }
     deinit { expansionTask?.cancel(); settlingTask?.cancel(); reviewTask?.cancel() }
     func shouldHide(queueCount: Int, pendingCount: Int, afterAction: Bool = false) -> Bool {
-        !manuallyOpened && !dragging && (queueCount == 0 || (pendingCount == 0 && (!expanded || afterAction)))
+        !manuallyOpened && !dragging && (queueCount == 0 || (!tucked && pendingCount == 0 && (!expanded || afterAction)))
     }
     func shouldHideWhenEmpty(queueCount: Int) -> Bool { !manuallyOpened && !dragging && queueCount == 0 }
     func shouldHideWhenMinimized(pendingCount: Int) -> Bool { !manuallyOpened && !expanded && !dragging && pendingCount == 0 }
     func present(expanded: Bool, manuallyOpened: Bool = false) {
         expansionTask?.cancel(); settlingTask?.cancel(); reviewTask?.cancel()
+        tucked = false
         self.manuallyOpened = manuallyOpened
         inside = false; pointerIsInside = false; candidate = nil; visible = []; setHovered(nil); scrolling = false; dragging = false; resizing = false
         setExpanded(expanded)
+    }
+    func tuck() {
+        expansionTask?.cancel()
+        settlingTask?.cancel()
+        reviewTask?.cancel()
+        tucked = true
+        candidate = nil
+        visible = []
+        scrolling = false
+        setHovered(nil)
+    }
+    func restore() {
+        tucked = false
     }
     func dismiss() { present(expanded: false, manuallyOpened: false) }
     func pointerInside(_ inside: Bool) {
         self.inside = inside
         if pointerIsInside != inside { pointerIsInside = inside }
-        guard !resizing else { return }
+        guard !tucked, !resizing else { return }
         guard !inside else { return }
         expansionTask?.cancel()
         guard !manuallyOpened, !dragging else { return }
@@ -85,7 +101,7 @@ final class ShelfInteraction: ObservableObject {
     }
     func stackHovered(_ inside: Bool, delay: TimeInterval? = nil) {
         expansionTask?.cancel()
-        guard inside, !scrolling, !dragging, !resizing else { return }
+        guard !tucked, inside, !scrolling, !dragging, !resizing else { return }
         let task = DispatchWorkItem { [weak self] in
             guard let self, self.inside, !self.scrolling, !self.dragging else { return }
             self.setExpanded(true)
@@ -117,23 +133,25 @@ final class ShelfInteraction: ObservableObject {
         hoveredID = id; onHoverChanged(id)
     }
     func setExpanded(_ value: Bool) {
-        guard expanded != value else { return }
+        guard !tucked, expanded != value else { return }
         expanded = value
         if !value { setHovered(nil); visible = []; reviewTask?.cancel() }
         else { scheduleReview() }
         onExpansion(value)
     }
     func pointer(over id: UUID, inside: Bool) {
+        guard !tucked else { return }
         if inside { candidate = id }
         else if candidate == id { candidate = nil }
         if !scrolling && !dragging { setHovered(candidate) }
     }
     func visibleItems(_ ids: Set<UUID>) {
-        guard visible != ids else { return }
+        guard !tucked, visible != ids else { return }
         visible = ids
         scheduleReview()
     }
     func scrolled() {
+        guard !tucked else { return }
         expansionTask?.cancel()
         settlingTask?.cancel()
         reviewTask?.cancel()
@@ -151,11 +169,11 @@ final class ShelfInteraction: ObservableObject {
     }
     private func scheduleReview() {
         reviewTask?.cancel()
-        guard expanded, !scrolling, !dragging else { return }
+        guard !tucked, expanded, !scrolling, !dragging else { return }
         let pending = visible.subtracting(reviewed)
         guard !pending.isEmpty else { return }
         let task = DispatchWorkItem { [weak self] in
-            guard let self, self.expanded, !self.scrolling, !self.dragging else { return }
+            guard let self, !self.tucked, self.expanded, !self.scrolling, !self.dragging else { return }
             let seen = pending.intersection(self.visible)
             self.reviewed.formUnion(seen)
             if !seen.isEmpty { self.onViewed(seen) }

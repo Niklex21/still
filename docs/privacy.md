@@ -12,6 +12,8 @@ Files are not encrypted by Still. macOS account permissions and FileVault govern
 
 Private captures skip History, persisted metadata, background OCR, and image analysis. They remain usable in the current queue, editor, export dialog, or floating pin. Temporary files are necessary for drag and drop; they live in Still's `Private` directory, rather than its searchable library. After handling and closing the final editor/export/pin, the queue entry is removed from memory and its files are deleted after a short 60-second lease for drag destinations. Quitting or the next startup clears leftover private files. A crash can leave files until the next launch. This is not secure erasure or a promise that pixels only ever exist in RAM.
 
+Dragging a screenshot creates a separate PNG in your user temporary directory. Still deletes canceled drag copies immediately and successful ones after 60 seconds so the receiving app can finish reading. Still also removes its copies when it quits and clears expired leftovers on launch.
+
 An explicitly selected Save As location, an image copied to a clipboard, or an upload destination can retain a copy. A private capture cannot become a saved walkthrough. Explicit OCR selection in the editor can recognize text transiently without adding it to searchable History.
 
 ## Dismiss, delete, and retention
